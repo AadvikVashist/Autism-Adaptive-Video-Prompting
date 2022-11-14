@@ -29,8 +29,9 @@ def file_selector(root = None):
         filename = fd.askopenfilename(title = "select a file", initialdir = desktop) #,
         return filename
 data_folder = folder_selector()
+
 setting_dict = {
-    "data_folder": data_folder,   
+    "root_folder": data_folder,   
 }
 json_object = json.dumps(setting_dict, indent=4)
 with open("settings.json", "w") as outfile:

@@ -76,6 +76,20 @@ class gesture_tracker:
             return 0
         else:
             raise Exception("You do not have an accesible camera. Please try again")
+    def file_selector(self, root = None):
+        if platform.system() == 'Windows': # this hasn't been tested 
+            desktop = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop') #windows 
+        elif platform.system() == 'Darwin':
+            desktop = os.path.join(os.path.join(os.path.expanduser('~')), 'Desktop') #mac 
+        elif platform.system() == 'Linux':
+            desktop = os.path.join(os.path.join(os.path.expanduser('~')), 'Desktop') #linux
+        else:
+            raise Exception("Unsupported operating system: " + platform.system())
+        filename = fd.askopenfilename(title = "select the video file you want", filetypes=[("video files", ("*.mp4", "*.m4p", "*.m4v","*.avi", "*.mov","*.mkv","*.wmv","*.webm"))], initialdir = desktop) #,
+        resulting_file = os.path.splitext(filename)
+        csv_file = resulting_file[0] + "_aadvikified.csv"
+        resulting_file = resulting_file[0] + "_aadvikified.mp4"  #implement custom file return types laterresulting_file[1]
+        return filename, resulting_file, csv_file
     def draw_holistic(self, frame, results):
         self.mediapipe_drawing.draw_landmarks(
             frame,
@@ -118,48 +132,40 @@ class gesture_tracker:
         for hand_world_landmarks in results.multi_hand_world_landmarks:
             self.mediapipe_drawing.plot_landmarks(
                 hand_world_landmarks, self.hand_solution.HAND_CONNECTIONS, azimuth=5)
+    def per_frame_analysis(self, frame, show_final : bool = True, save_results : bool = True):
+        frame = cv2.flip(frame, 1)
+        framergb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)    
+        if self.hand and self.pose and self.face:
+            print("processing")
+            self.frame_holistic = self.holistic_model.process(framergb)
+            print("drawing")
+            self.draw_holistic(frame, self.frame_holistic)
+        else:
+            if self.hand:#intialize the hand gesture tracker
+                self.frame_hand = self.hand_model.process(framergb)
+                self.draw_hand(frame, self.frame_hand)
+            if self.pose:
+                self.frame_pose = self.pose_model.process(framergb)
+                self.draw_pose(frame, self.frame_pose)
+            if self.face:
+                self.frame_face = self.face_model.process(framergb)
+                self.draw_face(frame, self.frame_face)
+        cv2.imshow("Gesture tracked", frame)
+        return frame
     def realtime_analysis(self, capture_index = 0):
         if capture_index == None:
             capture_index = self.camera_selector()
         self.capture = cv2.VideoCapture(capture_index)
         while True:
             _, frame = self.capture.read()
-            frame = cv2.flip(frame, 1)
-            framergb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            
-            if self.hand and self.pose and self.face:
-                print("processing")
-                self.frame_holistic = self.holistic_model.process(framergb)
-                print("drawing")
-                self.draw_holistic(frame, self.frame_holistic)
-            else:
-                if self.hand:#intialize the hand gesture tracker
-                    self.frame_hand = self.hand_model.process(framergb)
-                    self.draw_hand(frame, self.frame_hand)
-                if self.pose:
-                    self.frame_pose = self.pose_model.process(framergb)
-                    self.draw_pose(frame, self.frame_pose)
-                if self.face:
-                    self.frame_face = self.face_model.process(framergb)
-                    self.draw_face(frame, self.frame_face)
-            cv2.imshow("hehe", frame)
+            self.per_frame_analysis(frame, True, True)
             if cv2.waitKey(1) == ord('q'):
                 self.capture.release()
                 cv2.destroyAllWindows()
                 break
-    def file_selector(self, root = None):
-        if platform.system() == 'Windows': # this hasn't been tested 
-            desktop = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop') #windows 
-        elif platform.system() == 'Darwin':
-            desktop = os.path.join(os.path.join(os.path.expanduser('~')), 'Desktop') #mac 
-        elif platform.system() == 'Linux':
-            desktop = os.path.join(os.path.join(os.path.expanduser('~')), 'Desktop') #linux
-        else:
-            raise Exception("Unsupported operating system: " + platform.system())
-        filename = fd.askopenfilename(title = "select the video file you want", filetypes=[("video files", ("*.mp4", "*.m4p", "*.m4v","*.avi", "*.mov","*.mkv","*.wmv","*.webm"))], initialdir = desktop) #,
-        resulting_file = os.path.splitext(filename)
-        resulting_file = resulting_file[0] + "_aadvikified.mp4"  #implement custom file return types laterresulting_file[1]
-        return filename, resulting_file
+    def create_csv(self, filename, filetype : str, recorded_values: list):
+        s = 0
+        
     def video_analysis_demo(self, video = None):
         def video_dimensions_fps(videofile):
             vid = cv2.VideoCapture(videofile)
@@ -170,7 +176,7 @@ class gesture_tracker:
             vid.release()
             return int(width),int(height),fps
         if not video:
-            video,resulting_video = self.file_selector()
+            video,resulting_video, save_csv = self.file_selector()
         self.capture = cv2.VideoCapture(video)
         self.vid_info = video_dimensions_fps(video)
         result = cv2.VideoWriter(resulting_video, 
@@ -183,25 +189,7 @@ class gesture_tracker:
                 result.release()
                 cv2.destroyAllWindows()
                 break
-            frame = cv2.flip(frame, 1)
-            framergb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            
-            if self.hand and self.pose and self.face:
-                print("processing")
-                self.frame_holistic = self.holistic_model.process(framergb)
-                print("drawing")
-                self.draw_holistic(frame, self.frame_holistic)
-            else:
-                if self.hand:#intialize the hand gesture tracker
-                    self.frame_hand = self.hand_model.process(framergb)
-                    self.draw_hand(frame, self.frame_hand)
-                if self.pose:
-                    self.frame_pose = self.pose_model.process(framergb)
-                    self.draw_pose(frame, self.frame_pose)
-                if self.face:
-                    self.frame_face = self.face_model.process(framergb)
-                    self.draw_face(frame, self.frame_face)
-            cv2.imshow("hehe", cv2.flip(frame,1))
-            result.write(cv2.flip(frame,1))
+            frame =self.per_frame_analysis(frame, True, True)
+            result.write(frame)
 a = gesture_tracker()
 a.video_analysis_demo()
