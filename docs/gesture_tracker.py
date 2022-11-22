@@ -1,5 +1,3 @@
-# TechVidvan hand Gesture Recognizer
-
 # import necessary packages
 
 import cv2
@@ -191,5 +189,5 @@ class gesture_tracker:
                 break
             frame =self.per_frame_analysis(frame, True, True)
             result.write(frame)
-a = gesture_tracker()
-a.video_analysis_demo()
+a = gesture_tracker(face = False, pose = False)
+a.realtime_analysis()
