@@ -8,8 +8,8 @@ import os
 import pandas as pd
 import platform
 from tkinter import filedialog as fd
+import tkinter as tk
 # initialize mediapipe
-
 class gesture_tracker:
     def __init__(self, face : bool = True, hand : bool = True, pose : bool = True, face_confidence : float = 0.7, hand_confidence : float = 0.7, pose_confidence : float  = 0.7, number_of_hands : int = 2):
         self.hand = hand
@@ -75,6 +75,9 @@ class gesture_tracker:
         else:
             raise Exception("You do not have an accesible camera. Please try again")
     def file_selector(self, root = None):
+        window = tk.Tk()
+        window.wm_attributes('-topmost', 1)
+        window.withdraw()
         if platform.system() == 'Windows': # this hasn't been tested 
             desktop = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop') #windows 
         elif platform.system() == 'Darwin':
@@ -150,7 +153,7 @@ class gesture_tracker:
                 self.draw_face(frame, self.frame_face)
         cv2.imshow("Gesture tracked", frame)
         return frame
-    def realtime_analysis(self, capture_index = 0):
+    def realtime_analysis(self, capture_index : int = 0, save_results : bool = True):
         if capture_index == None:
             capture_index = self.camera_selector()
         self.capture = cv2.VideoCapture(capture_index)
@@ -162,8 +165,7 @@ class gesture_tracker:
                 cv2.destroyAllWindows()
                 break
     def create_csv(self, filename, filetype : str, recorded_values: list):
-        s = 0
-        
+        s = 0      
     def video_analysis_demo(self, video = None):
         def video_dimensions_fps(videofile):
             vid = cv2.VideoCapture(videofile)
@@ -189,5 +191,5 @@ class gesture_tracker:
                 break
             frame =self.per_frame_analysis(frame, True, True)
             result.write(frame)
-a = gesture_tracker(face = False, pose = False)
+a = gesture_tracker()
 a.realtime_analysis()

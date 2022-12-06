@@ -1,8 +1,10 @@
 import teacher_categorizer
 import send_emails
-reciever_data = teacher_categorizer.folder_to_list() 
+import re
+
+reciever_data, jobs = teacher_categorizer.folder_to_list() 
 sender_data = send_emails.sender_data()
-a = teacher_categorizer.categorization(reciever_data, ["hi"])
+a = teacher_categorizer.categorization(reciever_data, [["ITL","Instructional Team Leader"],["paraeducator"]])
 send_emails.compile_and_send_test(
     reciever_data = reciever_data,
     sender_data = sender_data,

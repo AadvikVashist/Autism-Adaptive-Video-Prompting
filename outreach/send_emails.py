@@ -55,6 +55,6 @@ def compile_and_send(reciever_data,sender_data, subject, body, fillers):
             if b in fillers:
                 bod[index] = eval(b)
         send_email(sender_data["user_email"],sender_data["user_password"],reciever_email,subject,''.join(bod), sep = "\n\n")
-def sender_data(loc = os.path.join(__location__,'email.json')):
+def sender_data(loc = os.path.join(os.getcwd(), "settings",'email.json')):
     data = dict(json.load(open(loc)))
     return data
