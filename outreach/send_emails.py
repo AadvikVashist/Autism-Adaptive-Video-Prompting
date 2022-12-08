@@ -24,17 +24,22 @@ def compile_and_send_test(reciever_data,sender_data, subject, body, fillers):
             elif "n" in yes_or_no:
                 os.exit() 
     for reciever in reciever_data:
-        reciever_email = reciever[-1]
+        reciever_email = [rec for rec in reciever if "@" in rec][0]
         reciever_name = reciever[0]
         reciever_role = ""
         if len(reciever) > 2:
-            reciever_role = ' '.join(reciever[1:-1])
-            reciever_role = reciever_role.lower()
+            reciever_role = reciever[1]
         bod = body.copy()
         for index, b in enumerate(bod):
-            if b in fillers:
-                bod[index] = eval(b) 
-        
+            if any([b == filler for filler in fillers]):
+                bod[index] = eval(b)
+            elif b.strip().endswith("a[n]"):
+                next_value = eval(bod[index+1])
+                if "a" in next_value or "e" in next_value or "i" in next_value or "o" in next_value or "u" in next_value:
+                    bod[index] = "an ".join(b.rsplit("a[n]", 1))
+                else:
+                    bod[index] = "a ".join(b.rsplit("a[n]", 1))
+            b = b
         print(sender_data["user_email"],reciever_email,subject,''.join(bod), sep = "\n\n")
 def compile_and_send(reciever_data,sender_data, subject, body, fillers):
     while True:

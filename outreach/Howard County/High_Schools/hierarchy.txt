@@ -1,4 +1,4 @@
 @hcpss.org, @inst.hcpss.org
-(ITL), ITL, Instructional Team Leader, team leader
+Instructional Team Leader, (ITL), ITL, team leader
 Teacher, Instructor
 Paraeducator
