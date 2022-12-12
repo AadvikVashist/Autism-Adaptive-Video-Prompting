@@ -9,6 +9,9 @@ import pandas as pd
 import platform
 from tkinter import filedialog as fd
 import tkinter as tk
+import mpl_toolkits.mplot3d.axes3d as p3
+from matplotlib import animation
+import matplotlib.pyplot as plt
 # initialize mediapipe
 class gesture_tracker:
     def __init__(self, face : bool = True, hand : bool = True, pose : bool = True, face_confidence : float = 0.7, hand_confidence : float = 0.7, pose_confidence : float  = 0.7, number_of_hands : int = 2):
@@ -23,18 +26,17 @@ class gesture_tracker:
         self.mediapipe_drawing_styles = mp.solutions.drawing_styles
         if hand and pose and face:
             self.holistic_solution= mp.solutions.holistic
-            self.holistic_model = mp.solutions.holistic.Holistic(static_image_mode=False,model_complexity=2,enable_segmentation=True,refine_face_landmarks=True) 
+            self.holistic_model = self.holistic_solution.Holistic(static_image_mode=False,model_complexity=2,enable_segmentation=True,refine_face_landmarks=True) 
         else:
             if hand:#intialize the hand gesture tracker
                 self.hand_solution = mp.solutions.hands
-                self.hand_model = mp.solutions.hands.Hands(max_num_hands=self.hand_quantity, min_detection_confidence=hand_confidence) 
-                
+                self.hand_model = mp.solutions.hands.Hands(static_image_mode = False, max_num_hands=self.hand_quantity, min_detection_confidence=hand_confidence) 
             if pose:
                 self.pose_solution = mp.solutions.pose
-                self.pose_model = 0
+                self.pose_model = mp.solutions.Pose(static_image_mode=False, model_complexity=2, enable_segmentation=True, min_detection_confidence=pose_confidence)
             if face:
                 self.face_solution = mp.solutions.face_mesh 
-                self.face_model = self.face_solution.FaceMesh(static_image_mode=False,max_num_faces=1,refine_landmarks=True,min_detection_confidence=face_confidence) #static_image_mode might need to change            
+                self.face_model = mp.solutions.face_mesh.FaceMesh(static_image_mode=False,max_num_faces=1,refine_landmarks=True,min_detection_confidence=face_confidence) #static_image_mode might need to change            
     def camera_selector(self) -> int:
         def camera_tester():
             camera_index = 0
@@ -111,52 +113,79 @@ class gesture_tracker:
             landmark_drawing_spec=self.mediapipe_drawing_styles.get_default_pose_landmarks_style())
     def draw_face(self, frame, results):
         for face_landmarks in results.multi_face_landmarks:
-            self.mediapipe_drawing.draw_landmarks(
-                image=frame,
-                landmark_list=face_landmarks,
-                connections=self.face_solution.FACEMESH_TESSELATION,
-                landmark_drawing_spec=None,
-                connection_drawing_spec=self.mediapipe_drawing_styles.get_default_pose_landmarks_style())
+            # self.mediapipe_drawing.draw_landmarks(
+            #     frame,
+            #     face_landmarks,
+            #     self.face_solution.FACEMESH_TESSELATION,
+            #     landmark_drawing_spec=None,
+            #     connection_drawing_spec=self.mediapipe_drawing_styles.get_default_face_mesh_tesselation_style())
             self.mediapipe_drawing.draw_landmarks(
                 image=frame,
                 landmark_list=face_landmarks,
                 connections=self.face_solution.FACEMESH_CONTOURS,
                 landmark_drawing_spec=None,
-                connection_drawing_spec=self.mediapipe_drawing_styles.get_default_pose_landmarks_style())
+                connection_drawing_spec=self.mediapipe_drawing_styles.get_default_face_mesh_contours_style())
             self.mediapipe_drawing.draw_landmarks(
                 image=frame,
                 landmark_list=face_landmarks,
                 connections=self.face_solution.FACEMESH_IRISES,
                 landmark_drawing_spec=None,
-                connection_drawing_spec=self.mediapipe_drawing_styles.get_default_pose_landmarks_style())
+                connection_drawing_spec=self.mediapipe_drawing_styles.get_default_face_mesh_iris_connections_style())
     def draw_hand(self, frame, results): 
-        for hand_world_landmarks in results.multi_hand_world_landmarks:
-            self.mediapipe_drawing.plot_landmarks(
-                hand_world_landmarks, self.hand_solution.HAND_CONNECTIONS, azimuth=5)
+        hands = []
+        for hand_landmarks in results.multi_hand_landmarks:
+            self.mediapipe_drawing.draw_landmarks(frame,
+                hand_landmarks , self.hand_solution.HAND_CONNECTIONS,
+                self.mediapipe_drawing_styles.get_default_hand_landmarks_style(),
+                self.mediapipe_drawing_styles.get_default_hand_connections_style())
+            landmarks = []
+            for landmark in hand_landmarks:
+                x,y,z = landmark.x,landmark.y,landmark.z
+                landmarks.append(x,y,z)
+            hands.append(landmarks)
+        return np.array(hands, dtype = np.float32)
     def per_frame_analysis(self, frame, show_final : bool = True, save_results : bool = True):
+        frame.flags.writeable = False
         frame = cv2.flip(frame, 1)
-        framergb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)    
+        framergb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame.flags.writeable = True
         if self.hand and self.pose and self.face:
             print("processing")
             self.frame_holistic = self.holistic_model.process(framergb)
-            print("drawing")
-            self.draw_holistic(frame, self.frame_holistic)
+            if self.frame_holistic is not None:
+                print("drawing")
+                self.draw_holistic(frame, self.frame_holistic)
         else:
             if self.hand:#intialize the hand gesture tracker
-                self.frame_hand = self.hand_model.process(framergb)
-                self.draw_hand(frame, self.frame_hand)
+                frame_hand = self.hand_model.process(framergb)
+                try:
+                    hand_landmarks = self.draw_hand(frame, frame_hand)
+                except:
+                    pass
+                    # print("hand not found")
             if self.pose:
-                self.frame_pose = self.pose_model.process(framergb)
-                self.draw_pose(frame, self.frame_pose)
+                frame_pose = self.pose_model.process(framergb)
+                try:
+                    self.draw_pose(frame, frame_pose)
+                except:
+                    pass
+                    #print("pose not found")
             if self.face:
-                self.frame_face = self.face_model.process(framergb)
-                self.draw_face(frame, self.frame_face)
+                frame_face = self.face_model.process(framergb)
+                try:
+                    hand_landmarks = self.draw_face(frame, frame_face)
+                except:
+                    pass
+                    #print("face not found")
         cv2.imshow("Gesture tracked", frame)
         return frame
     def realtime_analysis(self, capture_index : int = 0, save_results : bool = True):
         if capture_index == None:
             capture_index = self.camera_selector()
         self.capture = cv2.VideoCapture(capture_index)
+        # fig = plt.figure()
+        # ax = p3.Axes3D(fig)
+        # points, = ax.plot((0,0),(0,0),(0,0))
         while True:
             _, frame = self.capture.read()
             self.per_frame_analysis(frame, True, True)
@@ -191,5 +220,5 @@ class gesture_tracker:
                 break
             frame =self.per_frame_analysis(frame, True, True)
             result.write(frame)
-a = gesture_tracker()
+a = gesture_tracker(face = True, pose = False, hand = False)
 a.realtime_analysis()
