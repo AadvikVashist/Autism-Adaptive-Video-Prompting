@@ -6,6 +6,7 @@ import os
 import platform
 from tkinter import filedialog as fd
 import tkinter as tk
+from realtime_usage import realtime_usage
 # initialize mediapipe
 class gesture_tracker:
     def __init__(self, face : bool = True, hand : bool = True, pose : bool = True, face_confidence : float = 0.7, hand_confidence : float = 0.7, pose_confidence : float  = 0.7, number_of_hands : int = 2):
@@ -143,7 +144,7 @@ class gesture_tracker:
     
     
     def draw_face(self, frame, results):
-        for face_landmarks in results.multi_face_landmarks:
+        for face_landmarks in results.multi_face_lsandmarks:
             self.mediapipe_drawing.draw_landmarks(
                 image=frame,
                 landmark_list=face_landmarks,
@@ -224,6 +225,7 @@ class gesture_tracker:
         first_frame = True  
         if classification:
             saved = []    
+        self.frame_by_frame_check = realtime_usage
         while True:
             _, frame = self.capture.read()
             if first_frame and save_vid_file is not None:
@@ -247,8 +249,13 @@ class gesture_tracker:
             if save_results_vid_file:
                 result.write(frame)
                 print("wrote frame2")
-            if classification is not None:
+            try:
                 landmarks = self.extract_landmarks(self.frame_holistic, classification)
+                frame = self.frame_by_frame_check(frame, landmarks, True)
+            except:
+                pass
+
+            if classification is not None:
                 saved.append(landmarks)
             
             if cv2.waitKey(1) == ord('q'):
