@@ -6,7 +6,7 @@ import os
 import platform
 from tkinter import filedialog as fd
 import tkinter as tk
-from realtime_usage import realtime_usage
+# from realtime_usage import realtime_usage
 # initialize mediapipe
 class gesture_tracker:
     def __init__(self, face : bool = True, hand : bool = True, pose : bool = True, face_confidence : float = 0.7, hand_confidence : float = 0.7, pose_confidence : float  = 0.7, number_of_hands : int = 2):
@@ -214,7 +214,6 @@ class gesture_tracker:
                     pass
                     #print("face not found")
                     
-        cv2.imshow("Gesture tracked. Press Q to exit", frame)
         return frame
     
     
@@ -223,9 +222,9 @@ class gesture_tracker:
             capture_index = self.camera_selector()
         self.capture = cv2.VideoCapture(capture_index, cv2.CAP_DSHOW)
         first_frame = True  
+        landmarks = None
         if classification:
             saved = []    
-        self.frame_by_frame_check = realtime_usage
         while True:
             _, frame = self.capture.read()
             if first_frame and save_vid_file is not None:
@@ -244,20 +243,18 @@ class gesture_tracker:
                 
             if save_vid_file:
                 curr.write(frame)
-                print("wrote frame")
             frame = self.per_frame_analysis(frame, True)
             if save_results_vid_file:
                 result.write(frame)
-                print("wrote frame2")
             try:
                 landmarks = self.extract_landmarks(self.frame_holistic, classification)
-                frame = self.frame_by_frame_check(frame, landmarks, True)
+                if classification is not None:
+                    saved.append(landmarks)
             except:
                 pass
-
-            if classification is not None:
-                saved.append(landmarks)
-            
+            if landmarks is not None:
+                frame = self.frame_by_frame_check(frame, landmarks, True)
+            cv2.imshow("Gesture tracked. Press Q to exit", frame)
             if cv2.waitKey(1) == ord('q'):
                 self.capture.release()
                 if save_results_vid_file:
@@ -270,8 +267,12 @@ class gesture_tracker:
                 break
         if classification:
             return saved
-
-
+    
+    
+    def frame_by_frame_check(self, frame,landmarks, bool):
+        return frame
+    
+    
     def video_analysis(self, video = None, result_video = None, classification = None):
         def video_dimensions_fps(videofile):
             vid = cv2.VideoCapture(videofile)
@@ -308,7 +309,7 @@ class gesture_tracker:
         if classification:
             return saved
     
-    def extract_landmarks(self, results, class_name):
+    def extract_landmarks(self, results, class_name = None):
         pose = results.pose_landmarks.landmark
         pose_row = list(np.array([[landmark.x, landmark.y, landmark.z, landmark.visibility] for landmark in pose]).flatten())
         
@@ -319,6 +320,7 @@ class gesture_tracker:
         # Concate rows
         row = pose_row+face_row
         
-        # Append class name 
-        row.insert(0, class_name)
+        # Append class name
+        if class_name is not None:
+            row.insert(0, class_name)
         return row

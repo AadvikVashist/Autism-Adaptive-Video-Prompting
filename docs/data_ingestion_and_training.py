@@ -13,12 +13,34 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.metrics import accuracy_score # Accuracy metrics 
 import pickle 
 from gesture_tracker import gesture_tracker
+import init
+from datetime import datetime
+import cv2
 # initialize mediapipe
 class data_ingestion:
     def __init__(self):
         self.gesture_model = gesture_tracker(True, True, True, 0.7, 0.7, 0.7, 2)
-
-    
+    def make_training_set(self):
+        folder_name = init.folder_selector()
+        results = []
+        index = 0
+        time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        
+        while True:
+            file_name = os.path.join(folder_name,  "capture_") + time + ".mp4"
+            results_file_name = os.path.join(folder_name,  "capture_") + time + ".csv"
+            classification = input("what do you want to call this classifier: ")
+            classification = classification.lower().strip()
+            results_csv_file,csv_data = self.live_train(classification, file_name,0)
+            results.extend(csv_data)
+            check = input("would you like to make another classifier?")
+            if "y" in check.lower():
+                time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+                continue
+            else:
+                break
+        self.write_csv(results_file_name,results, self.gesture_model.number_of_coordinates)
+        self.model_pipeline(results_file_name)
     def write_csv(self, filename, rows, num_coords):                        
         with open(filename, mode='w', newline='') as f:
             csv_writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
@@ -31,13 +53,21 @@ class data_ingestion:
     
     
     def live_train(self, classification : str, save_vid_file  : str, capture_index : int = 0):
+        capture = cv2.VideoCapture(capture_index, cv2.CAP_DSHOW)
+        while True:
+            _, frame = capture.read()
+            cv2.imshow("type q once framing is right", cv2.flip(frame,1))
+            if cv2.waitKey(1) == ord('q'):
+                capture.release()
+                cv2.destroyAllWindows()
+                break
         save_results_file = list(os.path.splitext(save_vid_file)); results_csv = save_results_file[0] + ".csv"
         save_results_file[0] += "_results"; save_results_file = ''.join(save_results_file)#remove file extension and add results to the end
         csv_data = self.gesture_model.realtime_analysis(capture_index = capture_index,
                                                 save_vid_file = save_vid_file,
                                                 save_results_vid_file = save_results_file, classification = classification)
         self.write_csv(results_csv,csv_data, self.gesture_model.number_of_coordinates)
-        return results_csv
+        return results_csv,csv_data
     
     def existing_training(self, classification : str, video_file):
         result_video_file = os.path.splitext(video_file); results_csv = result_video_file[0] + ".csv"
@@ -70,7 +100,7 @@ class data_ingestion:
         fit_models = {}
         X_train, X_test, y_train, y_test = self.read_collected_data(input_csv_file, classification)
         for algo, pipeline in pipelines.items():
-            model = pipeline.fit(X_train, y_train)
+            model = pipeline.fit(X_train.values, y_train.values)
             fit_models[algo] = model
         fit_models['rc'].predict(X_test)
         
@@ -89,5 +119,5 @@ class data_ingestion:
         with open((output_csv_file[0] + '_gb.pkl'), 'wb') as f: #.pkl file
             pickle.dump(fit_models['gb'], f)
 a = data_ingestion()
-# results_csv = a.live_train("ymca", "C:/Users/aadvi/Desktop/Testing/video1.mp4",0)
-a.model_pipeline("ymca", "C:/Users/aadvi/Desktop/Testing/video1.csv")
+# results_csv = a.make_training_set()
+a.model_pipeline("high five", 'C:/Users/aadvi/Desktop/Tester\\capture_2022-12-13-16-40-11.csv')
