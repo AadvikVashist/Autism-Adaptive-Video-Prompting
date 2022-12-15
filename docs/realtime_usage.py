@@ -39,12 +39,15 @@ class realtime_usage(gesture_tracker):
         self.write_csv(results_csv,csv_data, self.number_of_coordinates)
     def frame_by_frame_check(self, frame, row, trys : bool = True):
         X = pd.DataFrame([row])
-        for model in self.models:
+        for model in self.models[1::]:
             model = model[0]
             if trys:
                 body_language_class = model.predict(X)[0]
-                body_language_prob = model.predict_proba(X)[0]
-                print(body_language_class, body_language_prob)
+                try:
+                    body_language_prob = model.predict_proba(X)[0]
+                    print(body_language_class, body_language_prob)
+                except:
+                    print(body_language_class)
                 try:
                     cv2.putText(frame, 'CLASS', (95,12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
                     cv2.putText(frame, body_language_class.split(' ')[0], (90,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)

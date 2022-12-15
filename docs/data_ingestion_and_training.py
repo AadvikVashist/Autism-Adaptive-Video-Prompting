@@ -1,7 +1,5 @@
 # import necessary packages
-import time
 import csv
-import numpy as np
 import os
 import pandas as pd
 #for training
@@ -18,9 +16,10 @@ from datetime import datetime
 import cv2
 # initialize mediapipe
 class data_ingestion:
-    def __init__(self):
+    def __init__(self, repo_writeable : bool = False):
         self.gesture_model = gesture_tracker(True, True, True, 0.7, 0.7, 0.7, 2)
-    def make_training_set(self):
+        self.repo_writeable = repo_writeable
+    def make_training_set(self, master_model : bool = False):
         folder_name = init.folder_selector()
         results = []
         index = 0
@@ -40,7 +39,7 @@ class data_ingestion:
             else:
                 break
         self.write_csv(results_file_name,results, self.gesture_model.number_of_coordinates)
-        self.model_pipeline(results_file_name)
+        self.model_pipeline(results_file_name, os.path.join(folder_name, "results"),master_model)
     def write_csv(self, filename, rows, num_coords):                        
         with open(filename, mode='w', newline='') as f:
             csv_writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
@@ -52,7 +51,7 @@ class data_ingestion:
                 csv_writer.writerow(row)
     
     
-    def live_train(self, classification : str, save_vid_file  : str, capture_index : int = 0):
+    def live_train(self, classification : str, save_vid_file  : str, capture_index : int = 1):
         capture = cv2.VideoCapture(capture_index, cv2.CAP_DSHOW)
         while True:
             _, frame = capture.read()
@@ -63,7 +62,7 @@ class data_ingestion:
                 break
         save_results_file = list(os.path.splitext(save_vid_file)); results_csv = save_results_file[0] + ".csv"
         save_results_file[0] += "_results"; save_results_file = ''.join(save_results_file)#remove file extension and add results to the end
-        csv_data = self.gesture_model.realtime_analysis(capture_index = capture_index,
+        csv_data, elapsed_time = self.gesture_model.realtime_analysis(capture_index = capture_index,
                                                 save_vid_file = save_vid_file,
                                                 save_results_vid_file = save_results_file, classification = classification)
         self.write_csv(results_csv,csv_data, self.gesture_model.number_of_coordinates)
@@ -78,7 +77,7 @@ class data_ingestion:
         self.write_csv(results_csv,csv_data, self.gesture_model.number_of_coordinates)
     
     
-    def read_collected_data(self, filename, classification):
+    def read_collected_data(self, filename):
         df = pd.read_csv(filename)
         df.head()
         df.tail()
@@ -88,9 +87,10 @@ class data_ingestion:
         return X_train, X_test, y_train, y_test
     
     
-    def model_pipeline(self,classification, input_csv_file,output_csv_file = None):
-        if output_csv_file is None:
-            output_csv_file = list(os.path.splitext(input_csv_file)); results_csv = input_csv_file[0] + "_analyzed.csv"
+    def model_pipeline(self, input_csv_file, output_file_base: str = None, master_model : bool = False):
+        if output_file_base is None:
+            output_file_base = list(os.path.splitext(input_csv_file))
+            output_file_base = output_file_base[0]
         pipelines = {
             'lr':make_pipeline(StandardScaler(), LogisticRegression()),
             'rc':make_pipeline(StandardScaler(), RidgeClassifier()),
@@ -98,9 +98,9 @@ class data_ingestion:
             'gb':make_pipeline(StandardScaler(), GradientBoostingClassifier()),
         }
         fit_models = {}
-        X_train, X_test, y_train, y_test = self.read_collected_data(input_csv_file, classification)
+        X_train, X_test, y_train, y_test = self.read_collected_data(input_csv_file)
         for algo, pipeline in pipelines.items():
-            model = pipeline.fit(X_train.values, y_train.values)
+            model = pipeline.fit(X_train, y_train)
             fit_models[algo] = model
         fit_models['rc'].predict(X_test)
         
@@ -110,14 +110,27 @@ class data_ingestion:
             print(algo, accuracy_score(y_test, yhat)) #predicted algorithm accuracy_score
         
         #store predicted values
-        with open((output_csv_file[0] + '_lr.pkl'), 'wb') as f: #.pkl file
+        with open((output_file_base + '_lr.pkl'), 'wb') as f: #.pkl file
             pickle.dump(fit_models['lr'], f)
-        with open((output_csv_file[0] + '_rc.pkl'), 'wb') as f: #.pkl file
+        with open((output_file_base + '_rc.pkl'), 'wb') as f: #.pkl file
             pickle.dump(fit_models['rc'], f)
-        with open((output_csv_file[0] + '_rf.pkl'), 'wb') as f: #.pkl file
+        with open((output_file_base + '_rf.pkl'), 'wb') as f: #.pkl file
             pickle.dump(fit_models['rf'], f)
-        with open((output_csv_file[0] + '_gb.pkl'), 'wb') as f: #.pkl file
-            pickle.dump(fit_models['gb'], f)
-a = data_ingestion()
-# results_csv = a.make_training_set()
-a.model_pipeline("high five", 'C:/Users/aadvi/Desktop/Tester\\capture_2022-12-13-16-40-11.csv')
+        with open((output_file_base + '_gb.pkl'), 'wb') as f: #.pkl file
+            pickle.dump(fit_models['gb'], f) 
+        if self.repo_writeable and master_model:
+            output_file_base = os.path.join(os.getcwd(), "model", "model_" + datetime.now().strftime("%Y-%m-%d-%H-%M-%S"))
+            with open((output_file_base + '_lr.pkl'), 'wb') as f: #.pkl file
+                pickle.dump(fit_models['lr'], f)
+            with open((output_file_base + '_rc.pkl'), 'wb') as f: #.pkl file
+                pickle.dump(fit_models['rc'], f)
+            with open((output_file_base + '_rf.pkl'), 'wb') as f: #.pkl file
+                pickle.dump(fit_models['rf'], f)
+            with open((output_file_base + '_gb.pkl'), 'wb') as f: #.pkl file
+                pickle.dump(fit_models['gb'], f) 
+        elif self.repo_writeable:
+            raise ValueError ("This object does not have write access to master. Please make sure to set the __init__ value is_writeable to True. ")
+a = data_ingestion(True)
+# results_csv = a.make_training_set(True)
+a.model_pipeline("C:/Users/aadvi/Desktop/Tester/capture_2022-12-15-17-30-14.csv", master_model =True)
+# a.model_pipeline("high five", 'C:/Users/aadvi/Desktop/Tester\\capture_2022-12-13-16-40-11.csv')

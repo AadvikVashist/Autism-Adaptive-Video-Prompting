@@ -6,6 +6,7 @@ import os
 import platform
 from tkinter import filedialog as fd
 import tkinter as tk
+import time
 # from realtime_usage import realtime_usage
 # initialize mediapipe
 class gesture_tracker:
@@ -224,19 +225,20 @@ class gesture_tracker:
         first_frame = True  
         landmarks = None
         if classification:
-            saved = []    
+            saved = []
+        start_time = time.time()    
         while True:
             _, frame = self.capture.read()
             if first_frame and save_vid_file is not None:
                 curr = cv2.VideoWriter(save_vid_file, 
                             fourcc = self.fourcc,
-                            fps = 30,
+                            fps = self.capture.get(cv2.CAP_PROP_FPS),
                             frameSize = (frame.shape[1], frame.shape[0]),
                             isColor = True)
             if first_frame and save_results_vid_file is not None:
                 result = cv2.VideoWriter(save_results_vid_file, 
                             fourcc = self.fourcc,
-                            fps = 30,
+                            fps = self.capture.get(cv2.CAP_PROP_FPS),
                             frameSize = (frame.shape[1], frame.shape[0]),
                             isColor = True)
             first_frame = False
@@ -266,7 +268,8 @@ class gesture_tracker:
                 cv2.destroyAllWindows()
                 break
         if classification:
-            return saved
+            return saved, time.time() - start_time
+        return None, time.time() - start_time
     
     
     def frame_by_frame_check(self, frame,landmarks, bool):
