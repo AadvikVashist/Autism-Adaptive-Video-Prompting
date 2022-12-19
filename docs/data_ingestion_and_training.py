@@ -100,7 +100,7 @@ class data_ingestion:
         fit_models = {}
         X_train, X_test, y_train, y_test = self.read_collected_data(input_csv_file)
         for algo, pipeline in pipelines.items():
-            model = pipeline.fit(X_train, y_train)
+            model = pipeline.fit(X_train.values, y_train.values)
             fit_models[algo] = model
         fit_models['rc'].predict(X_test)
         
@@ -131,6 +131,4 @@ class data_ingestion:
         elif self.repo_writeable:
             raise ValueError ("This object does not have write access to master. Please make sure to set the __init__ value is_writeable to True. ")
 a = data_ingestion(True)
-# results_csv = a.make_training_set(True)
-a.model_pipeline("C:/Users/aadvi/Desktop/Tester/capture_2022-12-15-17-30-14.csv", master_model =True)
-# a.model_pipeline("high five", 'C:/Users/aadvi/Desktop/Tester\\capture_2022-12-13-16-40-11.csv')
+results_csv = a.make_training_set(True)

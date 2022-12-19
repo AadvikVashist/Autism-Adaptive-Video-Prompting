@@ -7,20 +7,42 @@ import platform
 from tkinter import filedialog as fd
 import tkinter as tk
 import time
+import math
+import matplotlib.cm 
+import mediapipe.python.solutions.face_mesh_connections as mp_eyes
+import matplotlib.pyplot as plt
 # from realtime_usage import realtime_usage
 # initialize mediapipe
 class gesture_tracker:
-    def __init__(self, face : bool = True, hand : bool = True, pose : bool = True, face_confidence : float = 0.7, hand_confidence : float = 0.7, pose_confidence : float  = 0.7, number_of_hands : int = 2):
+    def __init__(self, eye : bool = True, face : bool = True, hand : bool = True, pose : bool = True, eye_confidence : float = 0.7, face_confidence : float = 0.7, hand_confidence : float = 0.7, pose_confidence : float  = 0.7, number_of_hands : int = 2):
         self.fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        self.optimal_y = 80
+        
+        self.eye = eye
         self.hand = hand
         self.face = face
         self.pose = pose
+        self.eye = eye
+        self.eye_confidence = self.eye
         self.face_confidence = face_confidence
         self.hand_confidence = hand_confidence
         self.pose_confidence = pose_confidence
         self.hand_quantity = number_of_hands
         self.mediapipe_drawing = mp.solutions.drawing_utils
         self.mediapipe_drawing_styles = mp.solutions.drawing_styles
+        
+        self.super_resolution2 = cv2.dnn_superres.DnnSuperResImpl_create()
+        self.super_resolution3 = cv2.dnn_superres.DnnSuperResImpl_create()
+        self.super_resolution4 = cv2.dnn_superres.DnnSuperResImpl_create()
+        
+        self.super_resolution2.readModel("model/upscaling/ESPCN_x2.pb")
+        self.super_resolution2.setModel("espcn",2)
+        
+        self.super_resolution3.readModel("model/upscaling/ESPCN_x3.pb")
+        self.super_resolution3.setModel("espcn",3)
+        
+        self.super_resolution4.readModel("model/upscaling/ESPCN_x3.pb")
+        self.super_resolution4.setModel("espcn",4)
         if hand and pose and face:
             self.holistic_solution= mp.solutions.holistic
             self.holistic_model = self.holistic_solution.Holistic(static_image_mode=False,model_complexity=2,
@@ -109,33 +131,111 @@ class gesture_tracker:
         csv_file = resulting_file[0] + "_aadvikified.csv"
         resulting_file = resulting_file[0] + "_aadvikified.mp4"  #implement custom file return types laterresulting_file[1]
         return filename, resulting_file, csv_file
-    
-    
-    def draw_holistic(self, frame, results):
-        # self.mediapipe_drawing.draw_landmarks(frame, results.face_landmarks, self.holistic_solution.FACEMESH_CONTOURS, 
-        #                         self.mediapipe_drawing.DrawingSpec(color=(80,110,10), thickness=1, circle_radius=1),
-        #                         self.mediapipe_drawing.DrawingSpec(color=(80,256,121), thickness=1, circle_radius=1)
-        #                         )
+    def _normalized_to_pixel_coordinates(self, normalized_x: float, normalized_y: float, image_width: int,image_height: int):
+        """Converts normalized value pair to pixel coordinates."""
+        # Checks if the float value is between 0 and 1.
+        def is_valid_normalized_value(value: float) -> bool:
+            return (value > 0 or math.isclose(0, value)) and (value < 1 or math.isclose(1, value))
+        if not (is_valid_normalized_value(normalized_x) and
+                is_valid_normalized_value(normalized_y)):
+            # TODO: Draw coordinates even if it's outside of the image bounds.
+            return None
+        x_px = min(math.floor(normalized_x * image_width), image_width - 1)
+        y_px = min(math.floor(normalized_y * image_height), image_height - 1)
+        return int(x_px),int(y_px)
         
-        # 2. Right hand
-        self.mediapipe_drawing.draw_landmarks(frame, results.right_hand_landmarks, self.holistic_solution.HAND_CONNECTIONS, 
-                                self.mediapipe_drawing.DrawingSpec(color=(80,22,10), thickness=2, circle_radius=4),
-                                self.mediapipe_drawing.DrawingSpec(color=(80,44,121), thickness=2, circle_radius=2)
-                                )
-
-        # 3. Left Hand
-        self.mediapipe_drawing.draw_landmarks(frame, results.left_hand_landmarks, self.holistic_solution.HAND_CONNECTIONS, 
-                                self.mediapipe_drawing.DrawingSpec(color=(121,22,76), thickness=2, circle_radius=4),
-                                self.mediapipe_drawing.DrawingSpec(color=(121,44,250), thickness=2, circle_radius=2)
-                                )
-
-        # 4. Pose Detections
-        self.mediapipe_drawing.draw_landmarks(frame, results.pose_landmarks, self.holistic_solution.POSE_CONNECTIONS, 
-                                self.mediapipe_drawing.DrawingSpec(color=(245,117,66), thickness=2, circle_radius=4),
-                                self.mediapipe_drawing.DrawingSpec(color=(245,66,230), thickness=2, circle_radius=2)
-                                )
+        
+    def draw_points(self,frame, landmark_list):
+        _VISIBILITY_THRESHOLD = 0.5
+        _PRESENCE_THRESHOLD = 0.5
+        image_rows, image_cols, _ = frame.shape
+        landmark_listed = []
+        cmap = matplotlib.cm.get_cmap('Spectral')
+        for idx, landmark in enumerate(landmark_list.landmark):
+            if ((landmark.HasField('visibility') and landmark.visibility < _VISIBILITY_THRESHOLD) or
+                (landmark.HasField('presence') and
+                landmark.presence < _PRESENCE_THRESHOLD)):
+                continue
+            landmark_px = self._normalized_to_pixel_coordinates(landmark.x, landmark.y,
+                                                        image_cols, image_rows)
+            landmark_listed.append(landmark_px)
+            # color = list(cmap(idx/len(landmark_list.landmark))[0:3]); color[0] *= 255; color[1] *= 255; color[2] *= 255
+            color = np.random.choice(range(0,150), size=3)
+            color = ( int (color [ 0 ]), int (color [ 1 ]), int (color [ 2 ])) 
+            
+            cv2.circle(frame, landmark_px, 1, color, 4)
+            cv2.imshow("xyz",frame)
+            print(idx) # 7 22 23 24 25 26 27 28 29 30 33 56
+            cv2.waitKey(0)
+            
+            time.sleep(0.1)
+        return frame, landmark_listed
     
     
+    def eyes(self, frame, landmark_list):
+        mask = np.zeros_like(frame)
+
+        right_eye = list(set(np.array(list(mp_eyes.FACEMESH_RIGHT_EYE)).flatten()))
+        left_eye = list(set(np.array(list(mp_eyes.FACEMESH_LEFT_EYE)).flatten()))
+        right_iris = list(set(np.array(list(mp_eyes.FACEMESH_RIGHT_IRIS)).flatten()))
+        left_iris = list(set(np.array(list(mp_eyes.FACEMESH_LEFT_IRIS)).flatten()))
+        image_rows, image_cols, _ = frame.shape    
+        if any((right_eye is None, left_eye is None, right_iris is None, left_iris is None)):
+            return
+        right_eye_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(landmark_list.landmark) if index in right_eye])
+        left_eye_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(landmark_list.landmark) if index in left_eye])
+        right_iris_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(landmark_list.landmark) if index in right_iris])
+        left_iris_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(landmark_list.landmark) if index in left_iris])
+        
+        cv2.fillPoly(mask, pts = [right_eye_list], color = (255,255,255))
+        cv2.fillPoly(mask, pts = [left_eye_list], color = (255,255,255))
+        right_eye_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(landmark_list.landmark) if index in right_eye])
+        left_eye_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(landmark_list.landmark) if index in left_eye])
+        
+        # right_iris_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(landmark_list.landmark) if index in right_iris])
+        # left_iris_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(landmark_list.landmark) if index in left_iris])
+        # cv2.fillPoly(mask, pts = [right_iris_list], color = (255,255,255))
+        # cv2.fillPoly(mask, pts = [left_iris_list], color = (255,255,255))
+
+        kernel = np.ones((2,2),np.uint8)
+        mask = cv2.dilate(mask,kernel,iterations = 5)
+        mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+        contours, hierarchy = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        x,y,w,h = cv2.boundingRect(np.concatenate(contours))
+        mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+        masked_img = cv2.bitwise_and(frame, mask)[y:y+h,x:x+w]
+        while masked_img.shape[0] < self.optimal_y:
+            scalar = round(masked_img.shape[0] / self.optimal_y)
+            if scalar >= 4:
+                masked_img = self.super_resolution4.upsample(masked_img)
+            elif scalar >= 3:
+                masked_img = self.super_resolution3.upsample(masked_img)
+            else:
+                masked_img = self.super_resolution2.upsample(masked_img)
+        # cv2.resize(masked_img, (int(masked_img.shape[1]*6),int(masked_img.shape[0]*6)), interpolation = cv2.INTER_AREA)
+        cv2.imshow('Masked Image Upscale', masked_img)
+        # contours, hierarchy = cv2.findContours(cv2.cvtColor(masked_img, cv2.COLOR_BGR2GRAY), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        # cv2.drawContours(masked_img, contours, -1, (0, 255, 0), 3)
+        # # masked_img = cv2.cvtColor(masked_img, cv2.COLOR_BGR2GRAY)
+        # # masked_img = cv2.resize(masked_img, (int(masked_img.shape[1]*6),int(masked_img.shape[0]*6)), interpolation = cv2.INTER_AREA)
+        # cv2.imshow('Masked Image', masked_img)
+        # gray = cv2.cvtColor(masked_img, cv2.COLOR_BGR2GRAY)
+        # circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, 1.2, 100)
+        # # ensure at least some circles were found
+        # if circles is not None:
+        #     # convert the (x, y) coordinates and radius of the circles to integers
+        #     circles = np.round(circles[0, :]).astype("int")
+        #     # loop over the (x, y) coordinates and radius of the circles
+        #     for (x, y, r) in circles:
+        #         # draw the circle in the output image, then draw a rectangle
+        #         # corresponding to the center of the circle
+        #         cv2.circle(masked_img, (x, y), r, (0, 255, 0), 4)
+        # cv2.imshow('Masked Image', masked_img)
+        # cv2.waitKey(0)
+    def draw_holistic(self, frame, results):
+        if results.face_landmarks is not None:
+            self.eyes(frame, results.face_landmarks)
+
     def draw_pose(self, frame, results):
         self.mediapipe_drawing.draw_landmarks(
             frame,
@@ -177,7 +277,7 @@ class gesture_tracker:
     
     def per_frame_analysis(self, frame, show_final : bool = True):
         frame.flags.writeable = False
-        frame = cv2.flip(frame, 1)
+        # frame = cv2.flip(frame, 1)
         framergb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         frame.flags.writeable = True
         self.number_of_coordinates = 0
@@ -186,9 +286,9 @@ class gesture_tracker:
             self.frame_holistic = self.holistic_model.process(framergb)
             try:
                 self.number_of_coordinates = len(self.frame_holistic.pose_landmarks.landmark)+len(self.frame_holistic.face_landmarks.landmark)
-                self.draw_holistic(frame, self.frame_holistic)
             except:
                 pass
+            self.draw_holistic(frame, self.frame_holistic)
         else:
             if self.hand:#intialize the hand gesture tracker
                 self.frame_hand = self.hand_model.process(framergb)
@@ -327,3 +427,5 @@ class gesture_tracker:
         if class_name is not None:
             row.insert(0, class_name)
         return row
+a = gesture_tracker()
+a.realtime_analysis()
