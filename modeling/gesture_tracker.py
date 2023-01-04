@@ -11,6 +11,7 @@ import math
 import matplotlib.cm 
 import mediapipe.python.solutions.face_mesh_connections as mp_eyes
 import matplotlib.pyplot as plt
+import tracking_points as points
 # from realtime_usage import realtime_usage
 # initialize mediapipe
 class gesture_tracker:
@@ -131,6 +132,8 @@ class gesture_tracker:
         csv_file = resulting_file[0] + "_aadvikified.csv"
         resulting_file = resulting_file[0] + "_aadvikified.mp4"  #implement custom file return types laterresulting_file[1]
         return filename, resulting_file, csv_file
+    
+    
     def _normalized_to_pixel_coordinates(self, normalized_x: float, normalized_y: float, image_width: int,image_height: int):
         """Converts normalized value pair to pixel coordinates."""
         # Checks if the float value is between 0 and 1.
@@ -143,99 +146,104 @@ class gesture_tracker:
         x_px = min(math.floor(normalized_x * image_width), image_width - 1)
         y_px = min(math.floor(normalized_y * image_height), image_height - 1)
         return int(x_px),int(y_px)
-        
-        
+    
+    
     def draw_points(self,frame, landmark_list):
-        _VISIBILITY_THRESHOLD = 0.5
-        _PRESENCE_THRESHOLD = 0.5
+        self.pose_dict = points.get_pose_dict()
+        self.face_dict = points.get_face_dict()
+        self.none = points.get_none()
         image_rows, image_cols, _ = frame.shape
-        landmark_listed = []
-        cmap = matplotlib.cm.get_cmap('Spectral')
+        # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        cmap = matplotlib.cm.get_cmap('hsv')
+        face_dict = []
+        for key, dictionary in self.face_dict.items():
+            if dictionary is not None:
+                face_dict.extend(dictionary)
+        frame = cv2.resize(frame, [frame.shape[1]*3, frame.shape[0]*3])
+        lister = []
         for idx, landmark in enumerate(landmark_list.landmark):
-            if ((landmark.HasField('visibility') and landmark.visibility < _VISIBILITY_THRESHOLD) or
-                (landmark.HasField('presence') and
-                landmark.presence < _PRESENCE_THRESHOLD)):
-                continue
-            landmark_px = self._normalized_to_pixel_coordinates(landmark.x, landmark.y,
-                                                        image_cols, image_rows)
-            landmark_listed.append(landmark_px)
-            # color = list(cmap(idx/len(landmark_list.landmark))[0:3]); color[0] *= 255; color[1] *= 255; color[2] *= 255
-            color = np.random.choice(range(0,150), size=3)
-            color = ( int (color [ 0 ]), int (color [ 1 ]), int (color [ 2 ])) 
-            
-            cv2.circle(frame, landmark_px, 1, color, 4)
-            cv2.imshow("xyz",frame)
-            print(idx) # 7 22 23 24 25 26 27 28 29 30 33 56
-            cv2.waitKey(0)
-            
-            time.sleep(0.1)
-        return frame, landmark_listed
+            if idx in face_dict:
+                landmark_px = self._normalized_to_pixel_coordinates(landmark.x, landmark.y,
+                                                            image_cols, image_rows)
+                cv2.circle(frame, [landmark_px[0]*3, landmark_px[1]*3], 2, np.array(cmap(0.9))*255, 2)
+                lister.append(landmark_px)
+            if idx not in face_dict and idx not in self.none:
+                landmark_px = self._normalized_to_pixel_coordinates(landmark.x, landmark.y,
+                                                            image_cols, image_rows)
+                cv2.circle(frame, [landmark_px[0]*3, landmark_px[1]*3], 2, np.array(cmap(0.5))*255, 1)
+                cv2.putText(frame, str(idx),  [landmark_px[0]*3, landmark_px[1]*3], fontFace = cv2.FONT_HERSHEY_SIMPLEX, fontScale = 0.4, color =  np.array(cmap(1))*255, thickness = 1, lineType = 2)
+                # cv2.imshow("frame", frame)
+                # cv2.waitKey(0)
+                print(idx)
+                
+        lister = np.array(lister)
+        mins = np.min(lister, axis = 0)
+        maxs = np.max(lister, axis = 0)
+        frame = frame[mins[1]*3-50:maxs[1]*3+50, mins[0]*3-50:maxs[0]*3+50]
+        cv2.imshow("frame", cv2.resize(frame, [int(frame.shape[1]*2), int(frame.shape[0]*2)]))
+        return frame, idx
+    
+    
+    def face_pose(self, frame, landmark_list):
+        nose_list = [33, 263, 1, 61, 291, 199]
+        height, width, _ = frame.shape
+        nose_listed = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, width, height)) for index, land in enumerate(landmark_list.landmark) if index in nose_list])
+        for i in nose_listed:
+            try:
+                cv2.circle(frame,i,2,(255,255,255),2)
+            except:
+                pass
+        face_2d = [(lm.x * width, lm.y * height) for idx, lm in enumerate(landmark_list.landmark) if idx in nose_list]
+        face_3d = [(lm.x * width, lm.y * height, lm.z ) for idx, lm in enumerate(landmark_list.landmark) if idx in nose_list]
+        nose_3d = [landmark_list.landmark[1].x*width, landmark_list.landmark[1].y*height,landmark_list.landmark[1].z*3000]
+        nose_2d = [landmark_list.landmark[1].x*width, landmark_list.landmark[1].y*height]
+        
+        # Convert to NumPy array
+        face_2d = np.array(face_2d, dtype=np.float64)
+        face_3d = np.array(face_3d, dtype=np.float64)
+
+        # The camera matrix
+        focal_length = 1 * width
+
+        cam_matrix = np.array([ [focal_length, 0, height / 2],
+                                [0, focal_length, width / 2],
+                                [0, 0, 1]])
+
+        # The Distance Matrix
+        dist_matrix = np.zeros((4, 1), dtype=np.float64)
+
+        # Solve PnP
+        success, rot_vec, trans_vec = cv2.solvePnP(face_3d, face_2d, cam_matrix, dist_matrix)
+
+        # Get rotational matrix
+        rmat, jac = cv2.Rodrigues(rot_vec)
+
+        # Get angles
+        angles, mtxR, mtxQ, Qx, Qy, Qz = cv2.RQDecomp3x3(rmat)
+
+        # Get the y rotation degree
+        x = angles[0] * 360
+        y = angles[1] * 360
+        z = angles[2] * 360
+        print(np.around((x,y,z),2))
+        return frame
     
     
     def eyes(self, frame, landmark_list):
-        mask = np.zeros_like(frame)
-
-        right_eye = list(set(np.array(list(mp_eyes.FACEMESH_RIGHT_EYE)).flatten()))
-        left_eye = list(set(np.array(list(mp_eyes.FACEMESH_LEFT_EYE)).flatten()))
-        right_iris = list(set(np.array(list(mp_eyes.FACEMESH_RIGHT_IRIS)).flatten()))
-        left_iris = list(set(np.array(list(mp_eyes.FACEMESH_LEFT_IRIS)).flatten()))
-        image_rows, image_cols, _ = frame.shape    
-        if any((right_eye is None, left_eye is None, right_iris is None, left_iris is None)):
-            return
-        right_eye_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(landmark_list.landmark) if index in right_eye])
-        left_eye_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(landmark_list.landmark) if index in left_eye])
-        right_iris_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(landmark_list.landmark) if index in right_iris])
-        left_iris_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(landmark_list.landmark) if index in left_iris])
-        
-        cv2.fillPoly(mask, pts = [right_eye_list], color = (255,255,255))
-        cv2.fillPoly(mask, pts = [left_eye_list], color = (255,255,255))
-        right_eye_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(landmark_list.landmark) if index in right_eye])
-        left_eye_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(landmark_list.landmark) if index in left_eye])
-        
-        # right_iris_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(landmark_list.landmark) if index in right_iris])
-        # left_iris_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(landmark_list.landmark) if index in left_iris])
-        # cv2.fillPoly(mask, pts = [right_iris_list], color = (255,255,255))
-        # cv2.fillPoly(mask, pts = [left_iris_list], color = (255,255,255))
-
-        kernel = np.ones((2,2),np.uint8)
-        mask = cv2.dilate(mask,kernel,iterations = 5)
-        mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
-        contours, hierarchy = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        x,y,w,h = cv2.boundingRect(np.concatenate(contours))
-        mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-        masked_img = cv2.bitwise_and(frame, mask)[y:y+h,x:x+w]
-        while masked_img.shape[0] < self.optimal_y:
-            scalar = round(masked_img.shape[0] / self.optimal_y)
-            if scalar >= 4:
-                masked_img = self.super_resolution4.upsample(masked_img)
-            elif scalar >= 3:
-                masked_img = self.super_resolution3.upsample(masked_img)
-            else:
-                masked_img = self.super_resolution2.upsample(masked_img)
-        # cv2.resize(masked_img, (int(masked_img.shape[1]*6),int(masked_img.shape[0]*6)), interpolation = cv2.INTER_AREA)
-        cv2.imshow('Masked Image Upscale', masked_img)
-        # contours, hierarchy = cv2.findContours(cv2.cvtColor(masked_img, cv2.COLOR_BGR2GRAY), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        # cv2.drawContours(masked_img, contours, -1, (0, 255, 0), 3)
-        # # masked_img = cv2.cvtColor(masked_img, cv2.COLOR_BGR2GRAY)
-        # # masked_img = cv2.resize(masked_img, (int(masked_img.shape[1]*6),int(masked_img.shape[0]*6)), interpolation = cv2.INTER_AREA)
-        # cv2.imshow('Masked Image', masked_img)
-        # gray = cv2.cvtColor(masked_img, cv2.COLOR_BGR2GRAY)
-        # circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, 1.2, 100)
-        # # ensure at least some circles were found
-        # if circles is not None:
-        #     # convert the (x, y) coordinates and radius of the circles to integers
-        #     circles = np.round(circles[0, :]).astype("int")
-        #     # loop over the (x, y) coordinates and radius of the circles
-        #     for (x, y, r) in circles:
-        #         # draw the circle in the output image, then draw a rectangle
-        #         # corresponding to the center of the circle
-        #         cv2.circle(masked_img, (x, y), r, (0, 255, 0), 4)
-        # cv2.imshow('Masked Image', masked_img)
-        # cv2.waitKey(0)
+        return frame, landmark_list
+    
+    
     def draw_holistic(self, frame, results):
+        self.draw_points(frame, results.face_landmarks)
         if results.face_landmarks is not None:
             self.eyes(frame, results.face_landmarks)
-
+        self.mediapipe_drawing.draw_landmarks(
+            frame,
+            results.pose_landmarks,
+            self.holistic_solution.POSE_CONNECTIONS,
+            landmark_drawing_spec=self.mediapipe_drawing_styles.get_default_pose_landmarks_style())
+    
+    
     def draw_pose(self, frame, results):
         self.mediapipe_drawing.draw_landmarks(
             frame,
@@ -283,12 +291,15 @@ class gesture_tracker:
         self.number_of_coordinates = 0
         
         if self.hand and self.pose and self.face:
+            curr_time = time.time(); self.timer[5].append(curr_time - self.last_time); self.last_time = curr_time #5
             self.frame_holistic = self.holistic_model.process(framergb)
             try:
                 self.number_of_coordinates = len(self.frame_holistic.pose_landmarks.landmark)+len(self.frame_holistic.face_landmarks.landmark)
             except:
                 pass
+            curr_time = time.time(); self.timer[6].append(curr_time - self.last_time); self.last_time = curr_time #6
             self.draw_holistic(frame, self.frame_holistic)
+            curr_time = time.time(); self.timer[7].append(curr_time - self.last_time); self.last_time = curr_time #7
         else:
             if self.hand:#intialize the hand gesture tracker
                 self.frame_hand = self.hand_model.process(framergb)
@@ -326,37 +337,50 @@ class gesture_tracker:
         landmarks = None
         if classification:
             saved = []
-        start_time = time.time()    
+        start_time = time.time()
+        self.last_time = time.time()
+        self.timer = [[],[],[],[],[],[],[],[],[],[],[],[]]
         while True:
+            self.timer[0].append(0); self.last_time = time.time() # 0
             _, frame = self.capture.read()
+            curr_time = time.time(); self.timer[1].append(curr_time - self.last_time); self.last_time = curr_time # 1
             if first_frame and save_vid_file is not None:
                 curr = cv2.VideoWriter(save_vid_file, 
                             fourcc = self.fourcc,
                             fps = self.capture.get(cv2.CAP_PROP_FPS),
                             frameSize = (frame.shape[1], frame.shape[0]),
                             isColor = True)
+            curr_time = time.time(); self.timer[2].append(curr_time - self.last_time); self.last_time = curr_time #2
             if first_frame and save_results_vid_file is not None:
                 result = cv2.VideoWriter(save_results_vid_file, 
                             fourcc = self.fourcc,
                             fps = self.capture.get(cv2.CAP_PROP_FPS),
                             frameSize = (frame.shape[1], frame.shape[0]),
                             isColor = True)
-            first_frame = False
+            curr_time = time.time(); self.timer[3].append(curr_time - self.last_time); self.last_time = curr_time #3
+            if first_frame:
+                first_frame = False
                 
             if save_vid_file:
                 curr.write(frame)
+            
+            curr_time = time.time(); self.timer[4].append(curr_time - self.last_time); self.last_time = curr_time #4
             frame = self.per_frame_analysis(frame, True)
+            curr_time = time.time(); self.timer[8].append(curr_time - self.last_time); self.last_time = curr_time #8
             if save_results_vid_file:
                 result.write(frame)
             try:
+                curr_time = time.time(); self.timer[9].append(curr_time - self.last_time); self.last_time = curr_time #9
                 landmarks = self.extract_landmarks(self.frame_holistic, classification)
                 if classification is not None:
                     saved.append(landmarks)
+                curr_time = time.time(); self.timer[10].append(curr_time - self.last_time); self.last_time = curr_time #10
             except:
                 pass
             if landmarks is not None:
                 frame = self.frame_by_frame_check(frame, landmarks, True)
             cv2.imshow("Gesture tracked. Press Q to exit", frame)
+            curr_time = time.time(); self.timer[11].append(curr_time - self.last_time); self.last_time = curr_time #11
             if cv2.waitKey(1) == ord('q'):
                 self.capture.release()
                 if save_results_vid_file:
@@ -412,6 +436,7 @@ class gesture_tracker:
         if classification:
             return saved
     
+    
     def extract_landmarks(self, results, class_name = None):
         pose = results.pose_landmarks.landmark
         pose_row = list(np.array([[landmark.x, landmark.y, landmark.z, landmark.visibility] for landmark in pose]).flatten())
@@ -420,7 +445,7 @@ class gesture_tracker:
         face = results.face_landmarks.landmark
         face_row = list(np.array([[landmark.x, landmark.y, landmark.z, landmark.visibility] for landmark in face]).flatten())
         
-        # Concate rows
+        # Concate rowsq
         row = pose_row+face_row
         
         # Append class name
@@ -429,3 +454,4 @@ class gesture_tracker:
         return row
 a = gesture_tracker()
 a.realtime_analysis()
+# print(np.mean(a.timer,axis = 1))

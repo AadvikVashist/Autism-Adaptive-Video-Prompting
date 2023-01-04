@@ -64,7 +64,8 @@ class data_ingestion:
         save_results_file[0] += "_results"; save_results_file = ''.join(save_results_file)#remove file extension and add results to the end
         csv_data, elapsed_time = self.gesture_model.realtime_analysis(capture_index = capture_index,
                                                 save_vid_file = save_vid_file,
-                                                save_results_vid_file = save_results_file, classification = classification)
+                                                save_results_vid_file = save_results_file,
+                                                classification = classification)
         self.write_csv(results_csv,csv_data, self.gesture_model.number_of_coordinates)
         return results_csv,csv_data
     

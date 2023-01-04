@@ -1,19 +1,14 @@
 # import necessary packages
-import time
-import csv
+from gesture_tracker import gesture_tracker
 import numpy as np
 import os
 import pandas as pd
 #for training
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import make_pipeline 
-from sklearn.preprocessing import StandardScaler 
-from sklearn.linear_model import LogisticRegression, RidgeClassifier
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.metrics import accuracy_score # Accuracy metrics 
 import pickle 
 import cv2
-from gesture_tracker import gesture_tracker
 class realtime_usage(gesture_tracker):
     def get_pickle_files(self, base_dir):
         everything = [os.path.join(dp, f) for dp, dn, fn in os.walk(base_dir) for f in fn]
@@ -72,3 +67,4 @@ class realtime_usage(gesture_tracker):
 a = realtime_usage()
 a.get_pickle_files("C:/Users/aadvi/Desktop/Tester")
 a.live_read()
+print(np.mean(a.timer,axis = 1))
