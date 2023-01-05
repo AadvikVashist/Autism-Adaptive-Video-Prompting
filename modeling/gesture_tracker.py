@@ -18,6 +18,8 @@ class gesture_tracker:
     def __init__(self, eye : bool = True, face : bool = True, hand : bool = True, pose : bool = True, eye_confidence : float = 0.7, face_confidence : float = 0.7, hand_confidence : float = 0.7, pose_confidence : float  = 0.7, number_of_hands : int = 2):
         self.fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         self.optimal_y = 80
+        self.landmark_px = []
+        self.odd_values = {}
         
         self.eye = eye
         self.hand = hand
@@ -36,14 +38,16 @@ class gesture_tracker:
         self.super_resolution3 = cv2.dnn_superres.DnnSuperResImpl_create()
         self.super_resolution4 = cv2.dnn_superres.DnnSuperResImpl_create()
         
-        self.super_resolution2.readModel("model/upscaling/ESPCN_x2.pb")
+        self.super_resolution2.readModel("models/upscaling/ESPCN_x2.pb")
         self.super_resolution2.setModel("espcn",2)
         
-        self.super_resolution3.readModel("model/upscaling/ESPCN_x3.pb")
+        self.super_resolution3.readModel("models/upscaling/ESPCN_x3.pb")
         self.super_resolution3.setModel("espcn",3)
         
-        self.super_resolution4.readModel("model/upscaling/ESPCN_x3.pb")
+        self.super_resolution4.readModel("models/upscaling/ESPCN_x3.pb")
         self.super_resolution4.setModel("espcn",4)
+        
+        self.hsv = matplotlib.cm.get_cmap('hsv')
         if hand and pose and face:
             self.holistic_solution= mp.solutions.holistic
             self.holistic_model = self.holistic_solution.Holistic(static_image_mode=False,model_complexity=2,
@@ -139,50 +143,60 @@ class gesture_tracker:
         # Checks if the float value is between 0 and 1.
         def is_valid_normalized_value(value: float) -> bool:
             return (value > 0 or math.isclose(0, value)) and (value < 1 or math.isclose(1, value))
-        if not (is_valid_normalized_value(normalized_x) and
-                is_valid_normalized_value(normalized_y)):
-            # TODO: Draw coordinates even if it's outside of the image bounds.
-            return None
+        # if not (is_valid_normalized_value(normalized_x) and
+        #         is_valid_normalized_value(normalized_y)):
+        #     # TODO: Draw coordinates even if it's outside of the image bounds.
+        #     return None
         x_px = min(math.floor(normalized_x * image_width), image_width - 1)
         y_px = min(math.floor(normalized_y * image_height), image_height - 1)
         return int(x_px),int(y_px)
     
     
     def draw_points(self,frame, landmark_list):
-        self.pose_dict = points.get_pose_dict()
-        self.face_dict = points.get_face_dict()
-        self.none = points.get_none()
-        image_rows, image_cols, _ = frame.shape
-        # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        cmap = matplotlib.cm.get_cmap('hsv')
-        face_dict = []
-        for key, dictionary in self.face_dict.items():
-            if dictionary is not None:
-                face_dict.extend(dictionary)
-        frame = cv2.resize(frame, [frame.shape[1]*3, frame.shape[0]*3])
-        lister = []
-        for idx, landmark in enumerate(landmark_list.landmark):
-            if idx in face_dict:
-                landmark_px = self._normalized_to_pixel_coordinates(landmark.x, landmark.y,
-                                                            image_cols, image_rows)
-                cv2.circle(frame, [landmark_px[0]*3, landmark_px[1]*3], 2, np.array(cmap(0.9))*255, 2)
-                lister.append(landmark_px)
-            if idx not in face_dict and idx not in self.none:
-                landmark_px = self._normalized_to_pixel_coordinates(landmark.x, landmark.y,
-                                                            image_cols, image_rows)
-                cv2.circle(frame, [landmark_px[0]*3, landmark_px[1]*3], 2, np.array(cmap(0.5))*255, 1)
-                cv2.putText(frame, str(idx),  [landmark_px[0]*3, landmark_px[1]*3], fontFace = cv2.FONT_HERSHEY_SIMPLEX, fontScale = 0.4, color =  np.array(cmap(1))*255, thickness = 1, lineType = 2)
-                # cv2.imshow("frame", frame)
-                # cv2.waitKey(0)
-                print(idx)
-                
-        lister = np.array(lister)
-        mins = np.min(lister, axis = 0)
-        maxs = np.max(lister, axis = 0)
-        frame = frame[mins[1]*3-50:maxs[1]*3+50, mins[0]*3-50:maxs[0]*3+50]
-        cv2.imshow("frame", cv2.resize(frame, [int(frame.shape[1]*2), int(frame.shape[0]*2)]))
-        return frame, idx
-    
+        if landmark_list is None and len(self.landmark_px) != 0:
+            for px in self.landmark_px:
+                cv2.circle(frame, [px[0]*3, px[1]*3], 2, np.array(self.hsv(0.9))*255, 2)
+            return frame
+        elif landmark_list is not None:
+            if "start_wait_time" in self.odd_values:
+                print("face_detected")
+                del self.odd_values["start_wait_time"]
+                del self.odd_values["wait_time"]
+            self.pose_dict = points.get_pose_dict()
+            self.face_dict = points.get_face_dict()
+            iteration = 1/(len(self.face_dict.keys())-1)*0.8
+            image_rows, image_cols, _ = frame.shape
+            face_dict = []
+            face_list =  list(self.face_dict.values())
+            # Mask of valid places in each row
+            for key, dictionary in self.face_dict.items():
+                if dictionary is not None:
+                    face_dict.extend(dictionary)
+            frame = cv2.resize(frame, [frame.shape[1]*3, frame.shape[0]*3])
+            self.landmark_px = []
+            for idx, landmark in enumerate(landmark_list.landmark):
+                if idx in face_dict:
+                    landmark_px = self._normalized_to_pixel_coordinates(landmark.x, landmark.y,
+                                                                image_cols, image_rows)
+
+                    index = [index for index, i in enumerate(face_list) if idx in i][0]
+                    cv2.circle(frame, [landmark_px[0]*3, landmark_px[1]*3], 2, np.array(self.hsv(index*iteration))*255, 2)
+                    self.landmark_px.append(landmark_px)
+            lister = np.array(self.landmark_px)
+            mins = np.min(lister, axis = 0)
+            maxs = np.max(lister, axis = 0)
+            frame = frame[mins[1]*3-50:maxs[1]*3+50, mins[0]*3-50:maxs[0]*3+50]
+        else:
+            curr_time = time.time()
+            if "start_wait_time" not in self.odd_values:
+                self.odd_values["start_wait_time"] = curr_time
+                self.odd_values["wait_time"] = curr_time
+            if int(self.odd_values["wait_time"] - self.odd_values["start_wait_time"]) < int(curr_time - self.odd_values["start_wait_time"]):
+                print("waiting for face detection for " + str(int(self.odd_values["wait_time"] - self.odd_values["start_wait_time"])) + " second")
+            self.odd_values["wait_time"] = curr_time
+        cv2.imshow("frame", frame)
+        return frame
+        
     
     def face_pose(self, frame, landmark_list):
         nose_list = [33, 263, 1, 61, 291, 199]

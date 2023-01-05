@@ -28,11 +28,3 @@ def file_selector(root = None):
             raise Exception("Unsupported operating system: " + platform.system())
         filename = fd.askopenfilename(title = "select a file", initialdir = desktop) #,
         return filename
-# data_folder = folder_selector()
-
-# setting_dict = {
-#     "root_folder": data_folder,   
-# }
-# json_object = json.dumps(setting_dict, indent=4)
-# with open("settings.json", "w") as outfile:
-#     outfile.write(json_object)
