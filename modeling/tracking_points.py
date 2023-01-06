@@ -3,7 +3,7 @@ import json
 import numpy as np
 import sys
 print(sys.path)
-DEFAULT_FILE = "settings/points.json"
+DEFAULT_FILE = "settings/points.json" #in settings
 from settings.json_reader import read_json
 def flatten(d):
     ret = []
@@ -13,12 +13,17 @@ def flatten(d):
         except:
             ret.append(i)
     return ret
-def read_json(file):
-    file = dict(json.load(open(file)))
-    return file
+
+
 def get_face_dict(file = DEFAULT_FILE):
     file = read_json(file)
     return file["face"]
+def get_face_indexes(file = DEFAULT_FILE):
+    dict = get_face_dict(file)
+    indexes = flatten(dict)
+    return indexes
+
+
 def get_none_dict(file = DEFAULT_FILE):
     file = read_json(file)
     file = file["no_list"]
@@ -27,17 +32,25 @@ def get_none_indexes(file = DEFAULT_FILE):
     file = read_json(file)
     file = file["no_list"]
     return flatten(file)
+
+
 def get_pose_dict(file = DEFAULT_FILE):
     file = read_json(file)
     return file["pose"]
-def get_face_indexes(file = DEFAULT_FILE):
-    dict = get_face_dict(file)
-    indexes = flatten(dict)
-    return indexes
 def get_pose_indexes(file = DEFAULT_FILE):
     dict = get_pose_dict(file)
     indexes = flatten(dict)
     return indexes
+
+
+def get_hand_dict(file = DEFAULT_FILE):
+    file = read_json(file)
+    return file["hand"]
+def gget_hand_indexes(file = DEFAULT_FILE):
+    dict = get_hand_dict(file)
+    indexes = flatten(dict)
+    return indexes
+
 def fix_file(file = DEFAULT_FILE):
     list_dict = get_face_indexes(file)
     bad_dict = get_none_dict(file)

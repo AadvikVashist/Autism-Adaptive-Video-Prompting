@@ -4,7 +4,7 @@ import tracking_points as points
 import matplotlib.cm as cm
 import numpy as np
 class training_points_selection_fresh_start(gesture_tracker):
-    def draw_points(self, frame, landmark_list):
+    def draw_face_proprietary(self, frame, landmark_list):
             self.pre_resize = 3
             self.resize = 2
             image_rows, image_cols, _ = frame.shape
@@ -25,7 +25,7 @@ class training_points_selection_fresh_start(gesture_tracker):
 
 
 class training_points_selection_fresh_start_no_cropping(gesture_tracker):
-    def draw_points(self, frame, landmark_list):
+    def draw_face_proprietary(self, frame, landmark_list):
             self.pre_resize = 3
             self.resize = 2
             image_rows, image_cols, _ = frame.shape
@@ -44,7 +44,7 @@ class training_points_selection_fresh_start_no_cropping(gesture_tracker):
             return frame, idx
 
 class training_points_selection_using_existing(gesture_tracker):
-    def draw_points(self, frame, landmark_list):
+    def draw_face_proprietary(self, frame, landmark_list):
             self.pre_resize = 3
             self.resize = 2
             self.pose_dict = points.get_pose_dict()
@@ -78,7 +78,7 @@ class training_points_selection_using_existing(gesture_tracker):
             cv2.imshow("frame", cv2.resize(frame, [int(frame.shape[1]*self.resize), int(frame.shape[0]*self.resize)]))
             return frame, idx
 class training_points_selection_using_existing_no_crop(gesture_tracker):
-    def draw_points(self, frame, landmark_list):
+    def draw_face_proprietary(self, frame, landmark_list):
             self.pre_resize = 3
             self.resize = 2
             self.pose_dict = points.get_pose_dict()

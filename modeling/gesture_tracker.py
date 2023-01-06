@@ -18,19 +18,25 @@ class gesture_tracker:
     def __init__(self, eye : bool = True, face : bool = True, hand : bool = True, pose : bool = True, eye_confidence : float = 0.7, face_confidence : float = 0.7, hand_confidence : float = 0.7, pose_confidence : float  = 0.7, number_of_hands : int = 2):
         self.fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         self.optimal_y = 80
-        self.landmark_px = []
+        self.landmark_px = {
+                            "face" : {},
+                            "left_hand" : {},
+                            "right_hand": {},
+                            "pose" : {},
+                            }
         self.odd_values = {}
         
-        self.eye = eye
-        self.hand = hand
-        self.face = face
-        self.pose = pose
-        self.eye = eye
-        self.eye_confidence = self.eye
-        self.face_confidence = face_confidence
-        self.hand_confidence = hand_confidence
-        self.pose_confidence = pose_confidence
-        self.hand_quantity = number_of_hands
+        self.tracking_or_not = {"eye" : eye,
+                                "hand" : hand,
+                                "face": face,
+                                "pose": pose,
+                                "eye_confidence" : eye_confidence,
+                                "face_confidence" : face_confidence,
+                                "hand_confidence" : hand_confidence,
+                                "pose_confidence" : pose_confidence,
+                                "hand_quantity" : number_of_hands,
+                                }
+
         self.mediapipe_drawing = mp.solutions.drawing_utils
         self.mediapipe_drawing_styles = mp.solutions.drawing_styles
         
@@ -48,34 +54,47 @@ class gesture_tracker:
         self.super_resolution4.setModel("espcn",4)
         
         self.hsv = matplotlib.cm.get_cmap('hsv')
-        if hand and pose and face:
+        self.point_dict = {}
+        if self.tracking_or_not["hand"] and self.tracking_or_not["pose"] and self.tracking_or_not["face"]:
+            self.point_dict["pose"] = points.get_pose_dict()
+            self.point_dict["left_hand"] = points.get_hand_dict()["left_hand"]
+            self.point_dict["right_hand"] = points.get_hand_dict()["right_hand"]
+            self.point_dict["face"] = points.get_face_dict()
+            self.cmap_spacing = 1/(len(self.point_dict["face"].keys())-1)*0.8
+            self.face_points_list =  list(self.point_dict["face"].values())
             self.holistic_solution= mp.solutions.holistic
             self.holistic_model = self.holistic_solution.Holistic(static_image_mode=False,model_complexity=2,
                                                                     enable_segmentation=True,
                                                                     refine_face_landmarks=True,
-                                                                    min_tracking_confidence=max(hand_confidence,face_confidence, pose_confidence),
-                                                                    min_detection_confidence=max(hand_confidence,face_confidence, pose_confidence))
+                                                                    min_tracking_confidence=max(self.tracking_or_not["hand_confidence"],self.tracking_or_not["face_confidence"], self.tracking_or_not["pose_confidence"]),
+                                                                    min_detection_confidence=max(self.tracking_or_not["hand_confidence"],self.tracking_or_not["face_confidence"], self.tracking_or_not["pose_confidence"]))
         else:
-            if hand:#intialize the hand gesture tracker
+            if self.tracking_or_not["hand"]: #intialize the hand gesture tracker
+                self.point_dict["left_hand"] = points.get_hand_dict()["left_hand"]
+                self.point_dict["right_hand"] = points.get_hand_dict()["right_hand"]
                 self.hand_solution = mp.solutions.hands
                 self.hand_model = mp.solutions.hands.Hands(static_image_mode = False,
-                                                            max_num_hands = self.hand_quantity,
-                                                            min_detection_confidence = hand_confidence,
-                                                            min_tracking_confidence = hand_confidence) 
-            if pose:
+                                                            max_num_hands = self.self.tracking_or_not["hand_quantity"],
+                                                            min_detection_confidence = self.tracking_or_not["hand_confidence"],
+                                                            min_tracking_confidence = self.tracking_or_not["hand_confidence"]) 
+            if self.tracking_or_not["pose"]:
+                self.point_dict["pose"] = points.get_pose_dict()
                 self.pose_solution = mp.solutions.pose
                 self.pose_model = self.pose_solution.Pose(static_image_mode = False,
                                                         model_complexity = 2,
                                                         enable_segmentation = True,
-                                                        min_detection_confidence = pose_confidence,
-                                                        min_tracking_confidence = pose_confidence)
-            if face:
+                                                        min_detection_confidence = self.tracking_or_not["pose_confidence"],
+                                                        min_tracking_confidence = self.tracking_or_not["pose_confidence"])
+            if self.tracking_or_not["face"]:
+                self.point_dict["face"] = points.get_face_dict()
+                self.cmap_spacing = 1/(len(self.point_dict["face"].keys())-1)*0.8
+                self.face_points_list =  list(self.point_dict["face"].values())
                 self.face_solution = mp.solutions.face_mesh 
                 self.face_model = mp.solutions.face_mesh.FaceMesh(static_image_mode=False,
                                                                     max_num_faces=1,
                                                                     refine_landmarks=True,
-                                                                    min_detection_confidence = face_confidence,
-                                                                    min_tracking_confidence = face_confidence) #static_image_mode might need to change            
+                                                                    min_detection_confidence = self.tracking_or_not["face_confidence"],
+                                                                    min_tracking_confidence = self.tracking_or_not["face_confidence"]) #static_image_mode might need to change            
     
     
     def camera_selector(self) -> int:
@@ -152,51 +171,152 @@ class gesture_tracker:
         return int(x_px),int(y_px)
     
     
-    def draw_points(self,frame, landmark_list):
-        if landmark_list is None and len(self.landmark_px) != 0:
-            for px in self.landmark_px:
-                cv2.circle(frame, [px[0]*3, px[1]*3], 2, np.array(self.hsv(0.9))*255, 2)
-            return frame
+    def draw_face_proprietary(self,frame, landmark_list, individual_show = False):
+        framed = None
+        if landmark_list is None and len(self.landmark_px["face"]) != 0:
+            for index, (key, value) in enumerate(self.landmark_px["face"].items()):
+                for val in value:
+                    cv2.circle(frame, [val[0], val[1]], 1, np.array(self.hsv(index*self.cmap_spacing))*255, 1)
+        
         elif landmark_list is not None:
-            if "start_wait_time" in self.odd_values:
+            if "start_face_wait_time" in self.odd_values: #cleans up if face is found after camera starts
                 print("face_detected")
-                del self.odd_values["start_wait_time"]
-                del self.odd_values["wait_time"]
-            self.pose_dict = points.get_pose_dict()
-            self.face_dict = points.get_face_dict()
-            iteration = 1/(len(self.face_dict.keys())-1)*0.8
+                del self.odd_values["start_face_wait_time"]
+                del self.odd_values["wait_face_time"]
+            
             image_rows, image_cols, _ = frame.shape
             face_dict = []
-            face_list =  list(self.face_dict.values())
-            # Mask of valid places in each row
-            for key, dictionary in self.face_dict.items():
-                if dictionary is not None:
-                    face_dict.extend(dictionary)
-            frame = cv2.resize(frame, [frame.shape[1]*3, frame.shape[0]*3])
-            self.landmark_px = []
-            for idx, landmark in enumerate(landmark_list.landmark):
-                if idx in face_dict:
-                    landmark_px = self._normalized_to_pixel_coordinates(landmark.x, landmark.y,
-                                                                image_cols, image_rows)
-
-                    index = [index for index, i in enumerate(face_list) if idx in i][0]
-                    cv2.circle(frame, [landmark_px[0]*3, landmark_px[1]*3], 2, np.array(self.hsv(index*iteration))*255, 2)
-                    self.landmark_px.append(landmark_px)
-            lister = np.array(self.landmark_px)
+            for index, (key, value) in enumerate(self.point_dict["face"].items()):
+                value = [self._normalized_to_pixel_coordinates(landmark_list.landmark[val].x,  landmark_list.landmark[val].y,
+                                                                image_cols, image_rows) for val in value]
+                self.landmark_px["face"][key] = value
+                for val in value:
+                    cv2.circle(frame, [val[0], val[1]], 1, np.array(self.hsv(index*self.cmap_spacing))*255, 1)
+            
+            lister = np.array(self.landmark_px["face"]["face_outline"])
             mins = np.min(lister, axis = 0)
             maxs = np.max(lister, axis = 0)
-            frame = frame[mins[1]*3-50:maxs[1]*3+50, mins[0]*3-50:maxs[0]*3+50]
+            framed = frame[int(mins[1]*0.8):int(maxs[1]*1.25), int(mins[0]*0.8):int(maxs[0]*1.25)]
+        
+        else: #no face is found in the image
+            curr_time = time.time()
+            if "start_face_wait_time" not in self.odd_values:
+                self.odd_values["start_face_wait_time"] = curr_time
+                self.odd_values["wait_face_time"] = curr_time
+            if int(self.odd_values["wait_face_time"] - self.odd_values["start_face_wait_time"]) < int(curr_time - self.odd_values["start_face_wait_time"]):
+                print("waiting for face detection for " + str(int(self.odd_values["wait_face_time"] - self.odd_values["start_face_wait_time"])) + " second")
+            self.odd_values["wait_face_time"] = curr_time
+        
+        if individual_show and framed is not None and framed.shape[0] != 0:
+            cv2.imshow("facial_points_drawn", framed)
+        return frame, framed
+        
+    
+    def draw_pose_proprietary(self, frame: np.array, pose_landmark_list, individual_show = False):
+        framed = None
+        if pose_landmark_list == None and len(self.landmark_px["pose"]) != 0:
+            for index, (key, value) in enumerate(self.landmark_px["pose"].items()):
+                for val in value:
+                    cv2.circle(frame, [val[0], val[1]], 2, np.array(self.hsv(index*self.cmap_spacing))*255, 2)
+        elif pose_landmark_list is not None:
+            if "start_pose_wait_time" in self.odd_values: #cleans up if face is found after camera starts
+                print("pose_detected")
+                del self.odd_values["start_pose_wait_time"]
+                del self.odd_values["wait_pose_time"]
+            
+            image_rows, image_cols, _ = frame.shape
+            for index, (key, value) in enumerate(self.point_dict["pose"].items()):
+                value = [self._normalized_to_pixel_coordinates(pose_landmark_list.landmark[val].x,  pose_landmark_list.landmark[val].y,
+                                                                image_cols, image_rows) for val in value]
+                self.landmark_px["pose"][key] = value
+                for val in value:
+                    cv2.circle(frame, [val[0], val[1]], 2, np.array(self.hsv(index*self.cmap_spacing))*255, 2)
+            
+            lister = np.array(points.flatten(self.landmark_px["pose"]))
+            mins = np.min(lister, axis = 0)
+            maxs = np.max(lister, axis = 0)
+            framed = frame[int(mins[1]*0.8):int(maxs[1]*1.25), int(mins[0]*0.8):int(maxs[0]*1.25)]
+        else: #no face is found in the image
+            curr_time = time.time()
+            if "start_pose_wait_time" not in self.odd_values:
+                self.odd_values["start_pose_wait_time"] = curr_time
+                self.odd_values["wait_pose_time"] = curr_time
+            if int(self.odd_values["wait_pose_time"] - self.odd_values["start_pose_wait_time"]) < int(curr_time - self.odd_values["start_pose_wait_time"]):
+                print("waiting for pose detection for " + str(int(self.odd_values["wait_pose_time"] - self.odd_values["start_pose_wait_time"])) + " second")
+            self.odd_values["wait_pose_time"] = curr_time
+        if individual_show and framed is not None:
+            cv2.imshow("facial_points_drawn", framed)
+        return frame, framed
+    
+    def draw_hands_proprietary(self, frame: np.array, left_hand_landmarks, right_hand_landmarks, individual_show = False):
+        frame_left = None; frame_right = None
+        if left_hand_landmarks == None and len(self.landmark_px["left_hand"]) != 0:
+            for index, (key, value) in enumerate(self.landmark_px["left_hand"].items()):
+                for val in value:
+                    cv2.circle(frame, [val[0], val[1]], 2, np.array(self.hsv(index*self.cmap_spacing))*255, 2)
+        elif left_hand_landmarks is not None:
+            if "start_left_hand_wait_time" in self.odd_values: #cleans up if face is found after camera starts
+                print("left_hand_detected")
+                del self.odd_values["start_left_hand_wait_time"]
+                del self.odd_values["wait_left_hand_time"]
+            
+            image_rows, image_cols, _ = frame.shape
+            for index, (key, value) in enumerate(self.point_dict["left_hand"].items()):
+                value = [self._normalized_to_pixel_coordinates(left_hand_landmarks.landmark[val].x,  left_hand_landmarks.landmark[val].y,
+                                                                image_cols, image_rows) for val in value]
+                self.landmark_px["left_hand"][key] = value
+                for val in value:
+                    cv2.circle(frame, [val[0], val[1]], 2, np.array(self.hsv(index*self.cmap_spacing))*255, 2)
+            
+            lister = np.array(points.flatten(self.landmark_px["left_hand"]))
+            mins = np.min(lister, axis = 0)
+            maxs = np.max(lister, axis = 0)
+            frame_left = frame[int(mins[1]*0.8):int(maxs[1]*1.25), int(mins[0]*0.8):int(maxs[0]*1.25)]
         else:
             curr_time = time.time()
-            if "start_wait_time" not in self.odd_values:
-                self.odd_values["start_wait_time"] = curr_time
-                self.odd_values["wait_time"] = curr_time
-            if int(self.odd_values["wait_time"] - self.odd_values["start_wait_time"]) < int(curr_time - self.odd_values["start_wait_time"]):
-                print("waiting for face detection for " + str(int(self.odd_values["wait_time"] - self.odd_values["start_wait_time"])) + " second")
-            self.odd_values["wait_time"] = curr_time
-        cv2.imshow("frame", frame)
-        return frame
+            if "start_left_hand_wait_time" not in self.odd_values:
+                self.odd_values["start_left_hand_wait_time"] = curr_time
+                self.odd_values["wait_left_hand_time"] = curr_time
+            if int(self.odd_values["wait_left_hand_time"] - self.odd_values["start_left_hand_wait_time"]) < int(curr_time - self.odd_values["start_left_hand_wait_time"]):
+                print("waiting for left hand detection for " + str(int(self.odd_values["wait_left_hand_time"] - self.odd_values["start_left_hand_wait_time"])) + " second")
+            self.odd_values["wait_left_hand_time"] = curr_time
         
+        if right_hand_landmarks == None and len(self.landmark_px["right_hand"]) != 0:
+            for index, (key, value) in enumerate(self.landmark_px["right_hand"].items()):
+                for val in value:
+                    cv2.circle(frame, [val[0], val[1]], 2, np.array(self.hsv(index*self.cmap_spacing))*255, 2)
+        elif right_hand_landmarks is not None:
+            if "start_right_hand_wait_time" in self.odd_values: #cleans up if face is found after camera starts
+                print("right_hand_detected")
+                del self.odd_values["start_right_hand_wait_time"]
+                del self.odd_values["wait_right_hand_time"]
+            
+            image_rows, image_cols, _ = frame.shape
+            for index, (key, value) in enumerate(self.point_dict["right_hand"].items()):
+                value = [self._normalized_to_pixel_coordinates(right_hand_landmarks.landmark[val].x,  right_hand_landmarks.landmark[val].y,
+                                                                image_cols, image_rows) for val in value]
+                self.landmark_px["right_hand"][key] = value
+                for val in value:
+                    cv2.circle(frame, [val[0], val[1]], 2, np.array(self.hsv(index*self.cmap_spacing))*255, 2)
+            
+            lister = np.array(points.flatten(self.landmark_px["right_hand"]))
+            mins = np.min(lister, axis = 0)
+            maxs = np.max(lister, axis = 0)
+            frame_right = frame[int(mins[1]*0.8):int(maxs[1]*1.25), int(mins[0]*0.8):int(maxs[0]*1.25)]
+        else:
+            curr_time = time.time()
+            if "start_right_hand_wait_time" not in self.odd_values:
+                self.odd_values["start_right_hand_wait_time"] = curr_time
+                self.odd_values["wait_right_hand_time"] = curr_time
+            if int(self.odd_values["wait_right_hand_time"] - self.odd_values["start_right_hand_wait_time"]) < int(curr_time - self.odd_values["start_right_hand_wait_time"]):
+                print("waiting for right hand detection for " + str(int(self.odd_values["wait_right_hand_time"] - self.odd_values["start_right_hand_wait_time"])) + " second")
+            self.odd_values["wait_right_hand_time"] = curr_time
+        if individual_show:
+            if frame_left is not None:
+                cv2.imshow("left_hand_points_drawn", frame_left)
+            if frame_right is not None:
+                cv2.imshow("right_hand_points_drawn", frame_right)
+        return frame
     
     def face_pose(self, frame, landmark_list):
         nose_list = [33, 263, 1, 61, 291, 199]
@@ -248,14 +368,16 @@ class gesture_tracker:
     
     
     def draw_holistic(self, frame, results):
-        self.draw_points(frame, results.face_landmarks)
+        self.draw_face_proprietary(frame, results.face_landmarks, False)
+        self.draw_pose_proprietary(frame, results.pose_landmarks, False)
+        self.draw_hands_proprietary(frame, results.left_hand_landmarks, results.right_hand_landmarks, False)
         if results.face_landmarks is not None:
             self.eyes(frame, results.face_landmarks)
-        self.mediapipe_drawing.draw_landmarks(
-            frame,
-            results.pose_landmarks,
-            self.holistic_solution.POSE_CONNECTIONS,
-            landmark_drawing_spec=self.mediapipe_drawing_styles.get_default_pose_landmarks_style())
+        # self.mediapipe_drawing.draw_landmarks(
+        #     frame,
+        #     results.pose_landmarks,
+        #     self.holistic_solution.POSE_CONNECTIONS,
+        #     landmark_drawing_spec=self.mediapipe_drawing_styles.get_default_pose_landmarks_style())
     
     
     def draw_pose(self, frame, results):
@@ -304,16 +426,13 @@ class gesture_tracker:
         frame.flags.writeable = True
         self.number_of_coordinates = 0
         
-        if self.hand and self.pose and self.face:
-            curr_time = time.time(); self.timer[5].append(curr_time - self.last_time); self.last_time = curr_time #5
+        if self.tracking_or_not["hand"] and self.tracking_or_not["pose"] and self.tracking_or_not["face"]:            
             self.frame_holistic = self.holistic_model.process(framergb)
             try:
                 self.number_of_coordinates = len(self.frame_holistic.pose_landmarks.landmark)+len(self.frame_holistic.face_landmarks.landmark)
             except:
                 pass
-            curr_time = time.time(); self.timer[6].append(curr_time - self.last_time); self.last_time = curr_time #6
             self.draw_holistic(frame, self.frame_holistic)
-            curr_time = time.time(); self.timer[7].append(curr_time - self.last_time); self.last_time = curr_time #7
         else:
             if self.hand:#intialize the hand gesture tracker
                 self.frame_hand = self.hand_model.process(framergb)
@@ -353,48 +472,38 @@ class gesture_tracker:
             saved = []
         start_time = time.time()
         self.last_time = time.time()
-        self.timer = [[],[],[],[],[],[],[],[],[],[],[],[]]
         while True:
-            self.timer[0].append(0); self.last_time = time.time() # 0
             _, frame = self.capture.read()
-            curr_time = time.time(); self.timer[1].append(curr_time - self.last_time); self.last_time = curr_time # 1
             if first_frame and save_vid_file is not None:
                 curr = cv2.VideoWriter(save_vid_file, 
                             fourcc = self.fourcc,
                             fps = self.capture.get(cv2.CAP_PROP_FPS),
                             frameSize = (frame.shape[1], frame.shape[0]),
                             isColor = True)
-            curr_time = time.time(); self.timer[2].append(curr_time - self.last_time); self.last_time = curr_time #2
             if first_frame and save_results_vid_file is not None:
                 result = cv2.VideoWriter(save_results_vid_file, 
                             fourcc = self.fourcc,
                             fps = self.capture.get(cv2.CAP_PROP_FPS),
                             frameSize = (frame.shape[1], frame.shape[0]),
                             isColor = True)
-            curr_time = time.time(); self.timer[3].append(curr_time - self.last_time); self.last_time = curr_time #3
             if first_frame:
                 first_frame = False
                 
             if save_vid_file:
                 curr.write(frame)
             
-            curr_time = time.time(); self.timer[4].append(curr_time - self.last_time); self.last_time = curr_time #4
             frame = self.per_frame_analysis(frame, True)
-            curr_time = time.time(); self.timer[8].append(curr_time - self.last_time); self.last_time = curr_time #8
             if save_results_vid_file:
                 result.write(frame)
             try:
-                curr_time = time.time(); self.timer[9].append(curr_time - self.last_time); self.last_time = curr_time #9
                 landmarks = self.extract_landmarks(self.frame_holistic, classification)
                 if classification is not None:
                     saved.append(landmarks)
-                curr_time = time.time(); self.timer[10].append(curr_time - self.last_time); self.last_time = curr_time #10
             except:
                 pass
             if landmarks is not None:
                 frame = self.frame_by_frame_check(frame, landmarks, True)
             cv2.imshow("Gesture tracked. Press Q to exit", frame)
-            curr_time = time.time(); self.timer[11].append(curr_time - self.last_time); self.last_time = curr_time #11
             if cv2.waitKey(1) == ord('q'):
                 self.capture.release()
                 if save_results_vid_file:
@@ -466,6 +575,9 @@ class gesture_tracker:
         if class_name is not None:
             row.insert(0, class_name)
         return row
+    
+    def get_timer(self):
+        x = 0
 a = gesture_tracker()
 a.realtime_analysis()
 # print(np.mean(a.timer,axis = 1))
