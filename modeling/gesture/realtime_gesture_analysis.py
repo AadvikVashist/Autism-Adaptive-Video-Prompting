@@ -14,7 +14,7 @@ from sklearn.metrics import accuracy_score # Accuracy metrics
 import pickle 
 import cv2
 from gesture_tracker import gesture_tracker
-class realtime_usage(gesture_tracker):
+class realtime_gesture_analysis(gesture_tracker):
     def get_pickle_files(self, base_dir):
         everything = [os.path.join(dp, f) for dp, dn, fn in os.walk(base_dir) for f in fn]
         self.lr_models = [pickle.load(open(i,"rb")) for i in everything if "_lr.pkl" in i]
@@ -69,6 +69,6 @@ class realtime_usage(gesture_tracker):
                 cv2.putText(frame, 'PROB', (15,12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
                 cv2.putText(frame, str(round(body_language_prob[np.argmax(body_language_prob)],2)), (10,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
                 return model
-a = realtime_usage()
+a = realtime_gesture_analysis()
 a.get_pickle_files("C:/Users/aadvi/Desktop/Tester")
 a.live_read()

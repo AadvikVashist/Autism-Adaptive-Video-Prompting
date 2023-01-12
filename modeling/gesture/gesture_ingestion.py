@@ -15,7 +15,7 @@ import init
 from datetime import datetime
 import cv2
 # initialize mediapipe
-class data_ingestion:
+class gesture_data_ingestion:
     def __init__(self, repo_writeable : bool = False):
         self.gesture_model = gesture_tracker(True, True, True, 0.7, 0.7, 0.7, 2)
         self.repo_writeable = repo_writeable
@@ -131,5 +131,5 @@ class data_ingestion:
                 pickle.dump(fit_models['gb'], f) 
         elif self.repo_writeable:
             raise ValueError ("This object does not have write access to master. Please make sure to set the __init__ value is_writeable to True. ")
-a = data_ingestion(True)
+a = gesture_data_ingestion(True)
 results_csv = a.make_training_set(True)

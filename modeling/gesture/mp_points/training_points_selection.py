@@ -1,6 +1,6 @@
-from gesture_tracker import gesture_tracker
+from modeling.gesture.gesture_tracker import gesture_tracker
 import cv2
-import tracking_points as points
+import gesture_tracking_points as points
 import matplotlib.cm as cm
 import numpy as np
 class training_points_selection_fresh_start(gesture_tracker):
