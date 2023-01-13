@@ -16,7 +16,7 @@ from modeling import init
 from typing import Union
 import threading
 from sklearn.linear_model import LinearRegression
-
+import eye_tracking
 # from realtime_usage import realtime_usage
 # initialize mediapipe
 class gesture_tracker:
@@ -70,6 +70,7 @@ class gesture_tracker:
         self.gesture_point_dict = {}
         self.model_and_solution = {}
         self.linear_model = LinearRegression()
+
         if self.tracking_or_not["hand"] and self.tracking_or_not["pose"] and self.tracking_or_not["face"]:
             self.gesture_point_dict["pose"] = points.get_pose_dict()
             self.gesture_point_dict["left_hand"] = points.get_hand_dict()["left_hand"]
@@ -332,8 +333,22 @@ class gesture_tracker:
         print(np.around((x,y,z),2))
         return frame
     
-    def eyes(self, frame, landmark_list):
-        return frame, landmark_list
+    def eyes(self, frame, landmarks):
+        image_rows, image_cols, _ = frame.shape
+        face_list, pose_list = eye_tracking.landmarks_to_lists(landmarks)
+        right_iris = self.gesture_point_dict["face"]["right_iris"]
+        left_iris = self.gesture_point_dict["face"]["left_iris"]
+        chest = self.gesture_point_dict["pose"]["chest"]
+        nose_line = self.gesture_point_dict["face"]["nose_line"]
+        right_iris_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(face_list.landmark) if index in right_iris])
+        left_iris_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(face_list.landmark) if index in left_iris])
+        chest_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(pose_list.landmark) if index in chest])
+        nose_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(face_list.landmark) if index in nose_line])
+
+        king_joshua_ratio, nose_angle,angle_diff, new_point, body_center, eye_center, _, _ = eye_tracking.calculate_eye_ratio(left_iris_list,right_iris_list,chest_list,nose_list)
+        frame = eye_tracking.draw_eye_calculations(frame,eye_center,angle_diff,king_joshua_ratio, body_center, nose_angle, chest_list, new_point)
+        return frame
+
 
     def draw_holistic(self, frame, results):
         self.draw_face_proprietary(frame, results.face_landmarks, False)
@@ -530,6 +545,8 @@ class gesture_tracker:
             if classification is not None:
                 landmarks = self.extract_landmarks(self.processed_frame["holistic"], classification)
                 saved.append(landmarks)
+            cv2.imshow("frames",frame)
+            cv2.waitKey(1)
             result.write(frame)
         if classification:
             return saved
@@ -570,6 +587,7 @@ class gesture_tracker:
                     print(feature, "detected; breaking wait time for", feature)
                     del self.etc["timers"][feature]["start"]
                     del self.etc["timers"][feature]["previous_elapsed"]
-# a = gesture_tracker()
-# a.realtime_analysis()
+a = gesture_tracker()
+a.realtime_analysis()
+# a.video_analysis("C:/Users/aadvi/Pictures/Camera Roll/WIN_20230112_18_03_16_Pro.mp4")
 # print(np.mean(a.timer,axis = 1))
