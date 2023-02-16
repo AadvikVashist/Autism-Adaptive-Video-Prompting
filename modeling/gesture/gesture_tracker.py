@@ -3,34 +3,32 @@ import cv2
 import numpy as np
 import mediapipe as mp
 import os
-import platform
-from tkinter import filedialog as fd
-import tkinter as tk
+
 import time
 import math
 import matplotlib.cm 
-import mediapipe.python.solutions.face_mesh_connections as mp_eyes
-import matplotlib.pyplot as plt
-import modeling.gesture.mp_points.gesture_tracking_points as points
-from modeling import init
+import modeling.gesture.pose_manipulation.training_points as points
 from typing import Union
-import threading
-from sklearn.linear_model import LinearRegression
-import eye_tracking
-# from realtime_usage import realtime_usage
-# initialize mediapipe
+import modeling.gesture.eye_tracking as eye_tracking
+import noduro
+import noduro_code.read_settings as read_settings
+# main class for all gesture tracking related things
+import modeling.gesture.pose_manipulation.pose_standardizer as standardize
+global track
+track = {}
 class gesture_tracker:
     def __init__(self, eye : bool = True, face : bool = True, hand : bool = True, pose : bool = True,
                 eye_confidence : float = 0.7, face_confidence : float = 0.7,
                 hand_confidence : float = 0.7, pose_confidence : float  = 0.7,
-                number_of_hands : int = 2):
-        self.landmark_px = {
+                number_of_hands : int = 2, frameskip = False):
+        track["start"] = time.time()
+        self.landmark_px = { 
                             "face" : {},
                             "left_hand" : {},
                             "right_hand": {},
                             "pose" : {},
-                            }
-        
+                            } # for drawing body parts using custom pointsets
+
         self.etc = {
             "timers" : {
                 "face" : {},
@@ -43,9 +41,13 @@ class gesture_tracker:
                 "cmap" : matplotlib.cm.get_cmap('hsv')
             },
             "video_codec" : cv2.VideoWriter_fourcc(*'mp4v'),
-            "max_wait_time" : 1
-        }
-        self.capture_index = 0
+            "max_wait_time" : 1,
+            "optimal_fps" : 20,
+        } #various values that don't need their own class variables
+        if frameskip == True:
+            self.etc["frame_skip"] = read_settings.get_points()
+        else:
+            self.etc["frame_skip"] = 1
         self.tracking_or_not = {"eye" : eye,
                                 "hand" : hand,
                                 "face": face,
@@ -55,35 +57,35 @@ class gesture_tracker:
                                 "hand_confidence" : hand_confidence,
                                 "pose_confidence" : pose_confidence,
                                 "hand_quantity" : number_of_hands,
-                                }
+                                } #basic information to cover whats being tracked, what isn't, and any other values
         
-        self.super_resolution = {"2" : cv2.dnn_superres.DnnSuperResImpl_create(),
-                                "3" : cv2.dnn_superres.DnnSuperResImpl_create(),
-                                "4" : cv2.dnn_superres.DnnSuperResImpl_create(),
-                                }
-        for i in range(2,5):
-            self.super_resolution[str(i)].readModel("models/upscaling/ESPCN_x" + str(i) + ".pb")
-            self.super_resolution[str(i)].setModel("espcn", i)
+        # self.super_resolution = {"2" : cv2.dnn_superres.DnnSuperResImpl_create(),
+        #                         "3" : cv2.dnn_superres.DnnSuperResImpl_create(),
+        #                         "4" : cv2.dnn_superres.DnnSuperResImpl_create(),
+        #                         }
+        # for i in range(2,5):
+        #     self.super_resolution[str(i)].readModel(noduro.subdir_path("models/upscaling/ESPCN_x" + str(i) + ".pb"))
+        #     self.super_resolution[str(i)].setModel("espcn", i)
+        #     a = noduro.subdir_path("models/upscaling/ESPCN_x" + str(i) + ".pb")
         
-        self.mediapipe_drawing = mp.solutions.drawing_utils
+        self.mediapipe_drawing = mp.solutions.drawing_utils #setup
         self.mediapipe_drawing_styles = mp.solutions.drawing_styles
-        self.gesture_point_dict = {}
-        self.model_and_solution = {}
-        self.linear_model = LinearRegression()
-
-        if self.tracking_or_not["hand"] and self.tracking_or_not["pose"] and self.tracking_or_not["face"]:
+        self.gesture_point_dict = {} #values determined in .json file
+        self.model_and_solution = {} #store the models
+        track["init to model and solution"] = time.time() - track["start"]; track["start"] = time.time()
+        if self.tracking_or_not["hand"] and self.tracking_or_not["pose"] and self.tracking_or_not["face"]: #holistic
             self.gesture_point_dict["pose"] = points.get_pose_dict()
             self.gesture_point_dict["left_hand"] = points.get_hand_dict()["left_hand"]
             self.gesture_point_dict["right_hand"] = points.get_hand_dict()["right_hand"]
             self.gesture_point_dict["face"] = points.get_face_dict()
             self.etc["colormap"]["cmap_spacing"] = 1/(len(self.gesture_point_dict["face"].keys())-1)*0.8
             self.model_and_solution["holistic_solution"] = mp.solutions.holistic
-            self.model_and_solution["holistic_model"] = self.model_and_solution["holistic_solution"].Holistic(static_image_mode=False,model_complexity=2,
-                                                                    enable_segmentation=True,
+            self.model_and_solution["holistic_model"] = self.model_and_solution["holistic_solution"].Holistic(static_image_mode=True,model_complexity=1,
+                                                                    enable_segmentation =False,
                                                                     refine_face_landmarks=True,
                                                                     min_tracking_confidence=max(self.tracking_or_not["hand_confidence"],self.tracking_or_not["face_confidence"], self.tracking_or_not["pose_confidence"]),
                                                                     min_detection_confidence=max(self.tracking_or_not["hand_confidence"],self.tracking_or_not["face_confidence"], self.tracking_or_not["pose_confidence"]))
-        else:
+        else: #missing 1+ body part(s)
             if self.tracking_or_not["hand"]: #intialize the hand gesture tracker
                 self.gesture_point_dict["left_hand"] = points.get_hand_dict()["left_hand"]
                 self.gesture_point_dict["right_hand"] = points.get_hand_dict()["right_hand"]
@@ -109,9 +111,11 @@ class gesture_tracker:
                                                                     refine_landmarks=True,
                                                                     min_detection_confidence = self.tracking_or_not["face_confidence"],
                                                                     min_tracking_confidence = self.tracking_or_not["face_confidence"]) #static_image_mode might need to change            
+        track["model and solution to end of solution"] = time.time() - track["start"]; track["start"] = time.time()
+        self.start() #filler func for sub classes
     
-    def camera_selector(self) -> int:
-        def camera_tester():
+    def camera_selector(self) -> int: #select camera 
+        def camera_tester(): #test a camera
             camera_index = 0
             cameras = []
             captures = []
@@ -150,54 +154,29 @@ class gesture_tracker:
         else:
             raise Exception("You do not have an accesible camera. Please try again")
     
-    def file_selector(self, root = None):
-        filename = init.file_selector(None, filetypes=[("video files", ("*.mp4", "*.m4p", "*.m4v","*.avi", "*.mov","*.mkv","*.wmv","*.webm"))])
+    def file_finder(self, root = None): #use classs file selector but also get return files
+        filename = noduro.file_selector(None, filetypes=[("video files", ("*.mp4", "*.m4p", "*.m4v","*.avi", "*.mov","*.mkv","*.wmv","*.webm"))])
         resulting_file = os.path.splitext(filename)
         csv_file = resulting_file[0] + "_aadvikified.csv"
         resulting_file = resulting_file[0] + "_aadvikified.mp4"  #implement custom file return types laterresulting_file[1]
         return filename, resulting_file, csv_file
     
-    def is_valid_normalized_value(self,value):
+    def is_valid_normalized_value(self,value): #check if value is normalized
         return (value > 0 or math.isclose(0, value)) and (value < 1 or math.isclose(1, value))
-    def _normalized_to_pixel_coordinates(self, normalized_x: float, normalized_y: float, image_width: int,image_height: int):
-        """Converts normalized value pair to pixel coordinates."""
-        # Checks if the float value is between 0 and 1.
-        def is_valid_normalized_value(value: float) -> bool:
-            return (value > 0 or math.isclose(0, value)) and (value < 1 or math.isclose(1, value))
-        # if not (is_valid_normalized_value(normalized_x) and
-        #         is_valid_normalized_value(normalized_y)):
-        #     # TODO: Draw coordinates even if it's outside of the image bounds.
-        #     return None
+    def _normalized_to_pixel_coordinates(self, normalized_x: float, normalized_y: float, image_width: int,image_height: int): #Converts normalized value pair to pixel coordinates.
         x_px = min(math.floor(normalized_x * image_width), image_width - 1)
         y_px = min(math.floor(normalized_y * image_height), image_height - 1)
         return int(x_px),int(y_px), 
-    
-    def updated_landmarks(self, landmark_list, feature : Union[list,str]):
-        def iter_landmarks(feat):
-            new = {}
-            for index, (key, value) in enumerate(self.gesture_point_dict[feat].items()):
-                value = [landmark_list.landmark[val] for val in value]
-                new[key] = value
-            return new
-        if type(feature) == list:
-            ret ={}
-            for key,feat in feature.items():
-                val = iter_landmarks(feat)
-                ret[key] = val
-            return ret
-        else:
-            val = iter_landmarks(feature)
-            return val
-
-    def draw_face_proprietary(self,frame, landmark_list, individual_show = False):
+      
+    def draw_face_proprietary(self,frame, landmark_list, individual_show = False): #draw face using gesture points from .json 
         framed = None
-        if landmark_list is None and len(self.landmark_px["face"]) != 0:
+        if landmark_list is None and len(self.landmark_px["face"]) != 0: #if there has been a previous comparison point set, and less than a second has passed since that time. No landmarks found
             if not("previous_elapsed" in self.etc["timers"]["face"] and self.etc["timers"]["face"]["previous_elapsed"] > self.etc["max_wait_time"]):
                 for index, (key, value) in enumerate(self.landmark_px["face"].items()):
                     for val in value:
                         cv2.circle(frame, [val[0], val[1]], 1, np.array(self.etc["colormap"]["cmap"](index*self.etc["colormap"]["cmap_spacing"]))*255, 1)
         
-        elif landmark_list is not None:
+        elif landmark_list is not None: #if landmarks found
             image_rows, image_cols, _ = frame.shape
             face_dict = []
             for index, (key, value) in enumerate(self.gesture_point_dict["face"].items()):
@@ -211,19 +190,19 @@ class gesture_tracker:
             maxs = np.max(lister, axis = 0)
             framed = frame[int(mins[1]*0.8):int(maxs[1]*1.25), int(mins[0]*0.8):int(maxs[0]*1.25)]
             
-        if individual_show and framed is not None and framed.shape[0] != 0:
+        if individual_show and framed is not None and framed.shape[0] != 0: #if you want to show the point drawing indvidually. 
             cv2.imshow("facial_points_drawn", framed)
             cv2.waitKey(0)
         return frame, framed
     
-    def draw_pose_proprietary(self, frame: np.array, pose_landmark_list, individual_show = False):
+    def draw_pose_proprietary(self, frame: np.array, pose_landmark_list, individual_show = False): #draw points for pose using .json file 
         framed = None
-        if pose_landmark_list == None and len(self.landmark_px["pose"]) != 0:
+        if pose_landmark_list == None and len(self.landmark_px["pose"]) != 0:  #if there has been a previous comparison point set, and less than a second has passed since that time. No landmarks found
             if not("previous_elapsed" in self.etc["timers"]["pose"] and self.etc["timers"]["pose"]["previous_elapsed"] > self.etc["max_wait_time"]):
                 for index, (key, value) in enumerate(self.landmark_px["pose"].items()):
                     for val in value:
                         cv2.circle(frame, [val[0], val[1]], 2, np.array(self.etc["colormap"]["cmap"](index*self.etc["colormap"]["cmap_spacing"]))*255, 2)
-        elif pose_landmark_list is not None:
+        elif pose_landmark_list is not None: #if landmarks found
             
             image_rows, image_cols, _ = frame.shape
             for index, (key, value) in enumerate(self.gesture_point_dict["pose"].items()):
@@ -236,20 +215,19 @@ class gesture_tracker:
             mins = np.min(lister, axis = 0)
             maxs = np.max(lister, axis = 0)
             framed = frame[int(mins[1]*0.8):int(maxs[1]*1.25), int(mins[0]*0.8):int(maxs[0]*1.25)]
-        if individual_show and framed is not None:
+        if individual_show and framed is not None: #if isolated point display is required
             cv2.imshow("facial_points_drawn", framed)               
             cv2.waitKey(0)
         return frame, framed
     
-    def draw_hands_proprietary(self, frame: np.array, left_hand_landmarks, right_hand_landmarks, individual_show = False):
+    def draw_hands_proprietary(self, frame: np.array, left_hand_landmarks, right_hand_landmarks, individual_show = False): #draws each hand seperately, as one may be tracked while the other isn't. Uses .json file
         frame_left = None; frame_right = None
-        if left_hand_landmarks == None and len(self.landmark_px["left_hand"]) != 0:
+        if left_hand_landmarks == None and len(self.landmark_px["left_hand"]) != 0:  #if there has been a previous comparison point set, and less than a second has passed since that time. No landmarks found
             if not("previous_elapsed" in self.etc["timers"]["left_hand"] and self.etc["timers"]["left_hand"]["previous_elapsed"] > self.etc["max_wait_time"]):
                 for index, (key, value) in enumerate(self.landmark_px["left_hand"].items()):
                     for val in value:
                         cv2.circle(frame, [val[0], val[1]], 2, np.array(self.etc["colormap"]["cmap"](index*self.etc["colormap"]["cmap_spacing"]))*255, 2)
-        elif left_hand_landmarks is not None:
-            
+        elif left_hand_landmarks is not None: #landmarks found
             image_rows, image_cols, _ = frame.shape
             for index, (key, value) in enumerate(self.gesture_point_dict["left_hand"].items()):
                 value = [self._normalized_to_pixel_coordinates(left_hand_landmarks.landmark[val].x,  left_hand_landmarks.landmark[val].y, image_cols, image_rows) for val in value]
@@ -262,13 +240,12 @@ class gesture_tracker:
             maxs = np.max(lister, axis = 0)
             frame_left = frame[int(mins[1]*0.8):int(maxs[1]*1.25), int(mins[0]*0.8):int(maxs[0]*1.25)]
                     
-        if right_hand_landmarks == None and len(self.landmark_px["right_hand"]) != 0:
+        if right_hand_landmarks == None and len(self.landmark_px["right_hand"]) != 0:  #if there has been a previous comparison point set, and less than a second has passed since that time. No landmarks found
             if not("previous_elapsed" in self.etc["timers"]["right_hand"] and self.etc["timers"]["right_hand"]["previous_elapsed"] > self.etc["max_wait_time"]):
                 for index, (key, value) in enumerate(self.landmark_px["right_hand"].items()):
                     for val in value:
                         cv2.circle(frame, [val[0], val[1]], 2, np.array(self.etc["colormap"]["cmap"](index*self.etc["colormap"]["cmap_spacing"]))*255, 2)
-        elif right_hand_landmarks is not None:
-            
+        elif right_hand_landmarks is not None: #landmarks found
             image_rows, image_cols, _ = frame.shape
             for index, (key, value) in enumerate(self.gesture_point_dict["right_hand"].items()):
                 value = [self._normalized_to_pixel_coordinates(right_hand_landmarks.landmark[val].x,  right_hand_landmarks.landmark[val].y, image_cols, image_rows) for val in value]
@@ -280,7 +257,7 @@ class gesture_tracker:
             mins = np.min(lister, axis = 0)
             maxs = np.max(lister, axis = 0)
             frame_right = frame[int(mins[1]*0.8):int(maxs[1]*1.25), int(mins[0]*0.8):int(maxs[0]*1.25)]
-        if individual_show:
+        if individual_show: #if specialized display required
             if frame_left is not None:
                 cv2.imshow("left_hand_points_drawn", frame_left)
                 cv2.waitKey(0)
@@ -289,49 +266,49 @@ class gesture_tracker:
                 cv2.waitKey(0)
         return frame
     
-    def face_pose(self, frame, landmark_list):
-        nose_list = [33, 263, 1, 61, 291, 199]
-        height, width, _ = frame.shape
-        nose_listed = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, width, height)) for index, land in enumerate(landmark_list.landmark) if index in nose_list])
-        for i in nose_listed:
-            try:
-                cv2.circle(frame,i,2,(255,255,255),2)
-            except:
-                pass
-        face_2d = [(lm.x * width, lm.y * height) for idx, lm in enumerate(landmark_list.landmark) if idx in nose_list]
-        face_3d = [(lm.x * width, lm.y * height, lm.z ) for idx, lm in enumerate(landmark_list.landmark) if idx in nose_list]
-        nose_3d = [landmark_list.landmark[1].x*width, landmark_list.landmark[1].y*height,landmark_list.landmark[1].z*3000]
-        nose_2d = [landmark_list.landmark[1].x*width, landmark_list.landmark[1].y*height]
+    # def face_pose(self, frame, landmark_list):
+    #     nose_list = [33, 263, 1, 61, 291, 199]
+    #     height, width, _ = frame.shape
+    #     nose_listed = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, width, height)) for index, land in enumerate(landmark_list.landmark) if index in nose_list])
+    #     for i in nose_listed:
+    #         try:
+    #             cv2.circle(frame,i,2,(255,255,255),2)
+    #         except:
+    #             pass
+    #     face_2d = [(lm.x * width, lm.y * height) for idx, lm in enumerate(landmark_list.landmark) if idx in nose_list]
+    #     face_3d = [(lm.x * width, lm.y * height, lm.z ) for idx, lm in enumerate(landmark_list.landmark) if idx in nose_list]
+    #     nose_3d = [landmark_list.landmark[1].x*width, landmark_list.landmark[1].y*height,landmark_list.landmark[1].z*3000]
+    #     nose_2d = [landmark_list.landmark[1].x*width, landmark_list.landmark[1].y*height]
         
-        # Convert to NumPy array
-        face_2d = np.array(face_2d, dtype=np.float64)
-        face_3d = np.array(face_3d, dtype=np.float64)
+    #     # Convert to NumPy array
+    #     face_2d = np.array(face_2d, dtype=np.float64)
+    #     face_3d = np.array(face_3d, dtype=np.float64)
 
-        # The camera matrix
-        focal_length = 1 * width
+    #     # The camera matrix
+    #     focal_length = 1 * width
 
-        cam_matrix = np.array([ [focal_length, 0, height / 2],
-                                [0, focal_length, width / 2],
-                                [0, 0, 1]])
+    #     cam_matrix = np.array([ [focal_length, 0, height / 2],
+    #                             [0, focal_length, width / 2],
+    #                             [0, 0, 1]])
 
-        # The Distance Matrix
-        dist_matrix = np.zeros((4, 1), dtype=np.float64)
+    #     # The Distance Matrix
+    #     dist_matrix = np.zeros((4, 1), dtype=np.float64)
 
-        # Solve PnP
-        success, rot_vec, trans_vec = cv2.solvePnP(face_3d, face_2d, cam_matrix, dist_matrix)
+    #     # Solve PnP
+    #     success, rot_vec, trans_vec = cv2.solvePnP(face_3d, face_2d, cam_matrix, dist_matrix)
 
-        # Get rotational matrix
-        rmat, jac = cv2.Rodrigues(rot_vec)
+    #     # Get rotational matrix
+    #     rmat, jac = cv2.Rodrigues(rot_vec)
 
-        # Get angles
-        angles, mtxR, mtxQ, Qx, Qy, Qz = cv2.RQDecomp3x3(rmat)
+    #     # Get angles
+    #     angles, mtxR, mtxQ, Qx, Qy, Qz = cv2.RQDecomp3x3(rmat)
 
-        # Get the y rotation degree
-        x = angles[0] * 360
-        y = angles[1] * 360
-        z = angles[2] * 360
-        print(np.around((x,y,z),2))
-        return frame
+    #     # Get the y rotation degree
+    #     x = angles[0] * 360
+    #     y = angles[1] * 360
+    #     z = angles[2] * 360
+    #     print(np.around((x,y,z),2))
+    #     return frame
     
     def eyes(self, frame, landmarks):
         image_rows, image_cols, _ = frame.shape
@@ -340,28 +317,22 @@ class gesture_tracker:
         left_iris = self.gesture_point_dict["face"]["left_iris"]
         chest = self.gesture_point_dict["pose"]["chest"]
         nose_line = self.gesture_point_dict["face"]["nose_line"]
-        right_iris_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(face_list.landmark) if index in right_iris])
-        left_iris_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(face_list.landmark) if index in left_iris])
-        chest_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(pose_list.landmark) if index in chest])
-        nose_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(face_list.landmark) if index in nose_line])
+        right_iris_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(face_list.landmark) if index in right_iris]) #rewrite to index with right iris
+        left_iris_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(face_list.landmark) if index in left_iris]) #rewrite
+        chest_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(pose_list.landmark) if index in chest]) #rewrite
+        nose_list = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, image_cols, image_rows)) for index, land in enumerate(face_list.landmark) if index in nose_line]) #rewrite
 
         king_joshua_ratio, nose_angle,angle_diff, new_point, body_center, eye_center, _, _ = eye_tracking.calculate_eye_ratio(left_iris_list,right_iris_list,chest_list,nose_list)
         frame = eye_tracking.draw_eye_calculations(frame,eye_center,angle_diff,king_joshua_ratio, body_center, nose_angle, chest_list, new_point)
         return frame
 
-
-    def draw_holistic(self, frame, results):
+    def draw_holistic(self, frame, results): #run the drawing algorithms
         self.draw_face_proprietary(frame, results.face_landmarks, False)
         self.draw_pose_proprietary(frame, results.pose_landmarks, False)
         self.draw_hands_proprietary(frame, results.left_hand_landmarks, results.right_hand_landmarks, False)
         if results.face_landmarks is not None:
             frame =  self.eyes(frame, results)
         return frame
-        # self.mediapipe_drawing.draw_landmarks(
-        #     frame,
-        #     results.pose_landmarks,
-        #     self.model_and_solution["holistic_solution"].POSE_CONNECTIONS,
-        #     landmark_drawing_spec=self.mediapipe_drawing_styles.get_default_pose_landmarks_style())
     
     def draw_pose(self, frame, results):
         self.mediapipe_drawing.draw_landmarks(
@@ -400,132 +371,133 @@ class gesture_tracker:
         return np.array(hands, dtype = np.float32)
     
     def per_frame_analysis(self, frame, show_final : bool = True):
-        frame.flags.writeable = False
+        track["loop to start of per frame"] = time.time() - track["start"]; track["start"] = time.time()
+        # frame.flags.writeable = False #save speed
         # frame = cv2.flip(frame, 1)
         framergb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frame.flags.writeable = True
-        self.number_of_coordinates = 0
-        
-        if self.tracking_or_not["hand"] and self.tracking_or_not["pose"] and self.tracking_or_not["face"]: 
-            a = time.time()           
-            self.processed_frame["holistic"] = self.model_and_solution["holistic_model"].process(framergb)
+        # frame.flags.writeable = True #so you can fix image
+        start = time.time() # check time
+        if self.tracking_or_not["hand"] and self.tracking_or_not["pose"] and self.tracking_or_not["face"]: #holistic
+            self.processed_frame["holistic"] = self.model_and_solution["holistic_model"].process(framergb) #run holistic model
+            track["per frame to process"] = time.time() - track["start"]; track["start"] = time.time()
             # print(1/(time.time() - a))
-            self.visibilty_dict = {"left_hand" : self.processed_frame["holistic"].left_hand_landmarks is not None, "right_hand" : self.processed_frame["holistic"].right_hand_landmarks is not None, "pose": self.processed_frame["holistic"].pose_landmarks is not None, "face" : self.processed_frame["holistic"].face_landmarks is not None}
-            try:
-                self.number_of_coordinates = len(self.processed_frame["holistic"].pose_landmarks.landmark)+len(self.processed_frame["holistic"].face_landmarks.landmark)
-            except:
-                pass
-            frame = self.draw_holistic(frame, self.processed_frame["holistic"])
+            self.visibilty_dict = {"left_hand" : self.processed_frame["holistic"].left_hand_landmarks is not None, "right_hand" : self.processed_frame["holistic"].right_hand_landmarks is not None, "pose": self.processed_frame["holistic"].pose_landmarks is not None, "face" : self.processed_frame["holistic"].face_landmarks is not None} #check if any is none
         else:
             if self.tracking_or_not["hand"]:
                 self.processed_frame["hand"] = self.model_and_solution["hand_model"].process(framergb)
                 self.visibilty_dict["left_hand"] = self.processed_frame["hand"].left_hand_landmarks is not None
                 self.visibilty_dict["right_hand"] = self.processed_frame["right_hand"].right_hand_landmarks is not None
-
-                try:
-                    self.number_of_coordinates += sum([len(hand.landmark) for hand in self.processed_frame["hand"].multi_hand_landmarks])
-                    hand_landmarks = self.draw_hand(frame, self.processed_frame["hand"])
-                except:
-                    pass
             if self.tracking_or_not["pose"]:
                 self.processed_frame["pose"] = self.model_and_solution["pose_model"].process(framergb)
                 self.visibilty_dict["pose"] = self.processed_frame["pose"].pose_landmarks is not None
-                try:
-                    self.number_of_coordinates += len(self.processed_frame["pose"].pose_landmarks.landmark)
-                    self.draw_pose(frame, self.processed_frame["pose"])
-                except:
-                    pass
             if self.tracking_or_not["face"]:
                 self.processed_frame["face"] = self.model_and_solution["face_model"].process(framergb)
                 self.visibilty_dict["face"] = self.processed_frame["face"].face_landmarks is not None
-                try:
-                    self.number_of_coordinates += len(self.processed_frame["face"].face_landmarks.landmark)
-                    hand_landmarks = self.draw_face(frame, self.processed_frame["face"])
-                except:
-                    pass
         self.get_timer()
-        if "fps" in self.etc:
-            cv2.putText(frame, "FPS: " + str(self.etc["fps"]), (10,15), cv2.FONT_HERSHEY_PLAIN, fontScale = 1, thickness= 2, color = (0,0,0))
-        self.process_frame = frame
+        track["per frame to timer"] = time.time() - track["start"]; track["start"] = time.time()
+        self.process_frame = frame #frame post processing(could have drawing points in it as well)
+        self.while_processing(self.process_frame) #filler for any subclasses
+        track["timer to end of per frame"] = time.time() - track["start"]; track["start"] = time.time()
+        return frame
+
+    def frame_by_frame_check(self, frame,landmarks, bool):
         return frame
     
-    def realtime_analysis(self, capture_index : int = 0, save_vid_file  : str = None, save_results_vid_file : str = None,   classification : str = None):
-        if capture_index == None:
-            capture_index = self.camera_selector()
-        self.capture = cv2.VideoCapture(capture_index, cv2.CAP_DSHOW)
-        first_frame = True  
-        landmarks = None
-        if classification:
-            saved = []
-        start_time = time.time()
-        self.last_time = time.time()
+    def looping_analysis(self, videoCapture : object, video_shape = None, fps = None,  result_vid : str = None, starting_vid: str = None, frame_skip : int = None):
         self.processed_frame = {}
         self.visibilty_dict = {}
+
+        
+        if fps is None:
+            fps = videoCapture.get(cv2.CAP_PROP_FPS)
+        _, frame = videoCapture.read()
+
+        #frame_skip
+        if frame_skip is None:
+            frame_skip = self.etc["frame_skip"] #recommended frame skip vs set value 
+        if video_shape is None:
+            video_shape = (frame.shape[1], frame.shape[0])
+        #video writer objects
+
+        if starting_vid is not None: #whether to make a new video writer
+            curr = cv2.VideoWriter(starting_vid, 
+                fourcc = self.etc["video_codec"],
+                fps = fps,
+                frameSize = video_shape,
+                isColor = True)
+        if result_vid is not None: #whether to make a result video writer
+            result = cv2.VideoWriter(result_vid, 
+                fourcc = self.etc["video_codec"],
+                fps = fps,
+                frameSize = video_shape,
+                isColor = True)
+        #loops
+        self.etc["frame_index"] = 0 
+        
+        track["capture to b4 loop"] = time.time() - track["start"]; track["start"] = time.time()        
         while True:
-            _, frame = self.capture.read()
-            if first_frame and save_vid_file is not None:
-                curr = cv2.VideoWriter(save_vid_file, 
-                            fourcc = self.etc["video_codec"],
-                            fps = self.capture.get(cv2.CAP_PROP_FPS),
-                            frameSize = (frame.shape[1], frame.shape[0]),
-                            isColor = True)
-            if first_frame and save_results_vid_file is not None:
-                result = cv2.VideoWriter(save_results_vid_file, 
-                            fourcc = self.etc["video_codec"],
-                            fps = self.capture.get(cv2.CAP_PROP_FPS),
-                            frameSize = (frame.shape[1], frame.shape[0]),
-                            isColor = True)
-            if first_frame:
-                first_frame = False
-                
-            if save_vid_file:
+            _, frame = videoCapture.read()
+            
+            if frame is None:
+                break
+            if starting_vid: #write frame to the file
                 curr.write(frame)
-            if save_results_vid_file:
+            
+            if self.etc["frame_index"] % self.etc["frame_skip"] == 0 : #if you want to skip frames
+                frame = self.per_frame_analysis(frame, True) #run frame analysis
+                standardized_pose = standardize.center_and_scale(standardize.convert_holistic_to_dict(self.processed_frame["holistic"]), self.gesture_point_dict)
+                
+            if self.tracking_or_not["hand"] and self.tracking_or_not["pose"] and self.tracking_or_not["face"]:
+                frame = self.draw_holistic(frame, self.processed_frame["holistic"])
+            
+            if "fps" in self.etc:
+                cv2.putText(frame, "FPS: " + str(self.etc["fps"]), (10,15), cv2.FONT_HERSHEY_PLAIN, fontScale = 1, thickness= 2, color = (0,0,0))
+
+            if result_vid: #write the results
                 result.write(frame)
-            try:
-                landmarks = self.extract_landmarks(self.processed_frame["holistic"], classification)
-                if classification is not None:
-                    saved.append(landmarks)
-            except:
-                pass
-            if landmarks is not None:
-                frame = self.frame_by_frame_check(frame, landmarks, True)
-            frame = self.per_frame_analysis(frame, True)
-            cv2.imshow("Gesture tracked. Press Q to exit", frame)    
-            if cv2.waitKey(1) == ord('q'):
-                self.capture.release()
-                if save_results_vid_file:
+            
+            self.etc["frame_index"] += 1
+            
+            #Frame displays
+            cv2.imshow("Gesture tracked. Press Q to exit", frame) #show tracking    
+            if cv2.waitKey(1) == ord('q'): #stop everything
+                videoCapture.release()
+                if result_vid:
                     result.release()
                     print("result_Release")
-                if save_vid_file:
+                if starting_vid:
                     curr.release()
                     print("curr_Release")
                 cv2.destroyAllWindows()
                 break
-            self.capture_index+=1
+        self.end() #ending
+
+    def realtime_analysis(self, capture_index : int = 0, save_vid_file  : str = None, save_results_vid_file : str = None, classification : str = None, frame_skip = None):
+        if capture_index == None:
+            capture_index = self.camera_selector() #select camera
+        track["end of init to capture"] = time.time() - track["start"]; track["start"] = time.time()
+        self.capture = cv2.VideoCapture(capture_index, cv2.CAP_DSHOW) #cap_show makes startup alot faster. Starts camera
+        first_frame = True  
+        landmarks = None
         if classification:
-            return saved, time.time() - start_time
-        return None, time.time() - start_time
+            saved = []
+        self.looping_analysis(self.capture, save_results_vid_file, save_vid_file, frame_skip)
     
+    def video_dimensions_fps(self,videofile):
+        vid = cv2.VideoCapture(videofile) #vid capture object
+        _,frame = vid.read()
+        height = vid.get(cv2.CAP_PROP_FRAME_HEIGHT)
+        width = vid.get(cv2.CAP_PROP_FRAME_WIDTH)
+        fps = vid.get(cv2.CAP_PROP_FPS)
+        vid.release()
+        return int(width),int(height),fps
     
-    def frame_by_frame_check(self, frame,landmarks, bool):
-        return frame
-    
-    
-    def video_analysis(self, video = None, result_video = None, classification = None):
-        def video_dimensions_fps(videofile):
-            vid = cv2.VideoCapture(videofile)
-            _,frame = vid.read()
-            height = vid.get(cv2.CAP_PROP_FRAME_HEIGHT)
-            width = vid.get(cv2.CAP_PROP_FRAME_WIDTH)
-            fps = vid.get(cv2.CAP_PROP_FPS)
-            vid.release()
-            return int(width),int(height),fps
-        
+    def video_analysis(self, video = None, result_video = None, classification = None, frameskip = 1):
         if not video:
-            video,result_video, = self.file_selector()
+            video,result_video, = self.file_finder() #get file if not provided
         self.capture = cv2.VideoCapture(video)
-        self.vid_info = video_dimensions_fps(video)
+        self.vid_info = self.video_dimensions_fps(video)
+        self.video_file = video
         result = cv2.VideoWriter(result_video, 
                         fourcc = self.etc["video_codec"],
                         fps = self.vid_info[2],
@@ -534,45 +506,11 @@ class gesture_tracker:
         if classification:
             saved = []
         self.processed_frame = {}
-        while True:
-            _, frame = self.capture.read()
-            if frame is None:
-                self.capture.release()
-                result.release()
-                cv2.destroyAllWindows()
-                break
-            frame = self.per_frame_analysis(frame, True)
-            if classification is not None:
-                landmarks = self.extract_landmarks(self.processed_frame["holistic"], classification)
-                saved.append(landmarks)
-            cv2.imshow("frames",frame)
-            cv2.waitKey(1)
-            result.write(frame)
-        if classification:
-            return saved
-    
-    
-    def extract_landmarks(self, results, class_name = None):
-        face =  self.updated_landmarks(results.face_landmarks.landmark, "face")
-        pose = self.updated_landmarks(results.pose_landmarks.landmark, "pose")
-        left_hand = self.updated_landmarks(results.left_hand_landmarks.landmark, "left_hand")
-        right_hand = self.updated_landmarks(results.right_hand_landmarks.landmark, "right_hand")
+        self.looping_analysis(self.capture, self.vid_info[0:2], self.vid_info[2], result_video, None, frame_skip = 1)
 
-        pose_row = list(np.array([[landmark.x, landmark.y, landmark.z,] for landmark in pose]).flatten()) #removed  landmark.visibility from list, but if necessary, must add back
-        face_row = list(np.array([[landmark.x, landmark.y, landmark.z] for landmark in face]).flatten())#removed  landmark.visibility from list, but if necessary, must add back
-        left_hand_row = list(np.array([[landmark.x, landmark.y, landmark.z] for landmark in left_hand]).flatten())#removed  landmark.visibility from list, but if necessary, must add back
-        right_hand_row = list(np.array([[landmark.x, landmark.y, landmark.z] for landmark in right_hand]).flatten())#removed  landmark.visibility from list, but if necessary, must add back
-
-        # Concate rowsq
-        row = pose_row+face_row+left_hand_row+right_hand_row
-        # Append class name
-        if class_name is not None:
-            row.insert(0, class_name)
-        return row
-    
-    def get_timer(self):
+    def get_timer(self): #timers to check tracking data
         curr_reference = time.time()
-        self.etc["fps"]= np.around(1/(curr_reference - self.etc["timer"]), 2)
+        self.etc["fps"] = np.around(self.etc["frame_skip"]/(curr_reference - self.etc["timer"]), 2)
         self.etc["timer"] = curr_reference
         for feature, value in self.visibilty_dict.items():
             if not value:
@@ -587,7 +525,16 @@ class gesture_tracker:
                     print(feature, "detected; breaking wait time for", feature)
                     del self.etc["timers"][feature]["start"]
                     del self.etc["timers"][feature]["previous_elapsed"]
-a = gesture_tracker()
-a.realtime_analysis()
-# a.video_analysis("C:/Users/aadvi/Pictures/Camera Roll/WIN_20230112_18_03_16_Pro.mp4")
+    
+    def start(self): #filler func for sub classes
+        return None
+    def while_processing(self,frame):
+        return None
+    def end(self):
+        return None
+
+if __name__ == '__main__':
+    a = gesture_tracker(frameskip = True)
+    a.realtime_analysis() #("C:/Users/aadvi/Desktop/Movie on 2-8-23 at 9.43 AM.mov")
+    # a.video_analysis("C:/Users/aadvi/Desktop/WIN_20230209_17_28_46_Pro.mp4")
 # print(np.mean(a.timer,axis = 1))

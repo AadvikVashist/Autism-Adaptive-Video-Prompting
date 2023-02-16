@@ -1,6 +1,10 @@
 {
     "filesystem": {
-        "data_folder": "D:/ASD"
+        "data_folder": "D:/ASD",
+        "gesture_points" : "data/raw/gesture_points/points.json",
+        "pose_standardization" : "data/raw/gesture_points/points_standardize.json"
     },
-    "sequence_num": 24
+    "sequence_num": 24,
+    "frame_skippage": 3,
+    "scale_factor": 0.07449543432458655
 }
