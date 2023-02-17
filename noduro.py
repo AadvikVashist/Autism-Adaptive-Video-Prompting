@@ -69,15 +69,16 @@ def write_json(file : str, data : dict, relative_path = False, write_or_add : bo
     with open(file, "w") as outfile:
         outfile.write(json_object)
 
-def read_json(file, relative_path = False):
+def read_json(file, relative_path = False, write_if_doesnt_exist = False):
     if ".json" not in file:
         raise ValueError(".json not in file: '" + file+ "'")
     elif relative_path:
         file = subdir_path(file)
     else:
         file = join(file)
-    if os.path.exists(file) == False: raise ValueError(file + " does not exist") 
-
+    if os.path.exists(file) == False and write_if_doesnt_exist == False: raise ValueError(file + " does not exist")
+    elif os.path.exists(file) == False and write_if_doesnt_exist == True: 
+        write_json(file, {}, True, True)
     file_data = dict(json.load(open(file)))
     return file_data
 
@@ -123,7 +124,7 @@ def flatten(d):
         except:
             ret.append(i)
     return ret
-def get_dir(path: str, relative_path : bool = False):
+def get_dir_files(path: str, relative_path : bool = False):
     if relative_path:
         path = subdir_path(path) 
     else:
@@ -136,6 +137,6 @@ if __name__ == '__main__':
     print("testing get_root:", get_root())
     print("testing subdir_path with desktop\\air\\hi/hi/wasd/how.py:", subdir_path("desktop\\air\\hi/hi/wasd/how.py"))
     print("testing flatten:", flatten({0 : "sdf",1  : "Sdf",2 : "sdfs",3 : "21321", 5: [101,1,2,23,12,31,23,123,12]}))
-    get_dir("",True)
+    get_dir_files("",True)
     print("testing file selector:", file_selector())
     print("testing file selector:", folder_selector())

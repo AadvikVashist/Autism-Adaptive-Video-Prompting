@@ -10,23 +10,30 @@ from sklearn.linear_model import LogisticRegression, RidgeClassifier
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.metrics import accuracy_score # Accuracy metrics 
 import pickle 
-from gesture_tracker import gesture_tracker
-import init
+import sys
+x = sys.path
+print(x)
+# from gesture_tracker import gesture_tracker
+import noduro
 from datetime import datetime
 import cv2
 # initialize mediapipe
+import noduro_code.read_settings as read_settings
+DEFAULT_FILE,_ = read_settings.get_settings()
+DEFAULT_FILE = DEFAULT_FILE["filesystem"]["gesture_paths"] #in settings
+DICT = noduro.read_json(DEFAULT_FILE, True,True)
 class gesture_data_ingestion:
-    def __init__(self, repo_writeable : bool = False):
-        self.gesture_model = gesture_tracker(True, True, True, 0.7, 0.7, 0.7, 2)
-        self.repo_writeable = repo_writeable
+    def __init__(self):
+        x = 0
+        # self.gesture_model = gesture_tracker(True, True, True, 0.7, 0.7, 0.7, 2)
     def make_training_set(self, master_model : bool = False):
-        folder_name = init.folder_selector()
+        folder_name = noduro.folder_selector()
         results = []
         index = 0
         time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         
         while True:
-            file_name = os.path.join(folder_name,  "capture_") + time + ".mp4"
+            file_name = noduro.join(folder_name,  "capture_") + time + ".mp4"
             results_file_name = os.path.join(folder_name,  "capture_") + time + ".csv"
             classification = input("what do you want to call this classifier: ")
             classification = classification.lower().strip()
@@ -51,7 +58,7 @@ class gesture_data_ingestion:
                 csv_writer.writerow(row)
     
     
-    def live_train(self, classification : str, save_vid_file  : str, capture_index : int = 1):
+    def live_train(self, classification : str, save_vid_file  : str, capture_index : int = 0):
         capture = cv2.VideoCapture(capture_index, cv2.CAP_DSHOW)
         while True:
             _, frame = capture.read()
@@ -131,5 +138,5 @@ class gesture_data_ingestion:
                 pickle.dump(fit_models['gb'], f) 
         elif self.repo_writeable:
             raise ValueError ("This object does not have write access to master. Please make sure to set the __init__ value is_writeable to True. ")
-a = gesture_data_ingestion(True)
+a = gesture_data_ingestion()
 results_csv = a.make_training_set(True)

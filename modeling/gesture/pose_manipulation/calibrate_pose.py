@@ -37,7 +37,7 @@ def results_to_settings(results_csv = noduro.subdir_path("data/analyzed/pose_sta
 if __name__ == "__main__":
     a = calibrate_pose()
 
-    files = noduro.get_dir("data/raw/pose_standardizer", True)
+    files = noduro.get_dir_files("data/raw/pose_standardizer", True)
     for file in files:
         a.video_analysis(file)
     results_to_settings()
