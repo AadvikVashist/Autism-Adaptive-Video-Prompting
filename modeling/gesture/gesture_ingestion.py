@@ -94,23 +94,24 @@ class gesture_data_ingestion(gesture_tracker):
                 shutil.move(send_folder,recieve_folder)
                 print("moved", send_folder, "to", recieve_folder)
         elif existing_files == False:
-            self.live_train(save_vid_folder = cwd, certain = False)
+            self.train_multiple_videos_of_same_gesture_using_camera(save_vid_folder = cwd, certain = False)
         if existing_files is not None:
             self.train_gesture_using_folder_videos_recurse(cwd)
 
-    def train_gesture_using_folder_videos_recurse(self, folder_path):
+    def convert_video_to_csv_files(self, file : str, result_file_names : str) -> None:   
+        self.video_analysis(file,None,None, 1, standardize_pose = True) #analyze the video and get a list of the results
+        #fill nanes with imputer for self.save_pose and self.save_calibrated_pose
+        self.save_pose = self.fill_nans_with_imputer_for_sklearn_regression(self.save_pose)
+        self.save_calibrated_pose = self.fill_nans_with_imputer_for_sklearn_regression(self.save_calibrated_pose)
+        self.save_points_as_csv(result_file_names[0],self.save_pose) # write raw results
+        self.save_points_as_csv(result_file_names[1],self.save_calibrated_pose)#write actual results
+    def train_gesture_using_folder_videos_recurse(self, folder_path) -> None:
         folder_files = noduro.get_dir_files(folder_path, False,False)
         for file in folder_files:
-            f, ext = os.path.splitext(file) 
-            result_file = f + "_results.csv"
-            standardized_result_file = f + "_standardized_results.csv"
-            if ext in [".mp4", ".m4a"] and result_file not in folder_files and standardized_result_file not in folder_files:
-                self.video_analysis(file,None,None, 1, standardize_pose = True) #analyze the video and get a list of the results
-                #fill nanes with imputer for self.save_pose and self.save_calibrated_pose
-                self.save_pose = self.fill_nans_with_imputer_for_sklearn_regression(self.save_pose)
-                self.save_calibrated_pose = self.fill_nans_with_imputer_for_sklearn_regression(self.save_calibrated_pose)
-                self.save_points_as_csv(result_file,self.save_pose) # write raw results
-                self.save_points_as_csv(standardized_result_file,self.save_calibrated_pose)#write actual results
+            f, ext= os.path.splitext(file)
+            results = [f + "_results.csv",f + "_standardized_results.csv"]
+            if ext in [".mp4", ".m4a"] and all(results not in folder_files):
+                self.convert_video_to_csv_files(self, file,results)
     def make_training_set(self, master_model : bool = False):
         folder_name = noduro.folder_selector()
         results = []
@@ -120,7 +121,7 @@ class gesture_data_ingestion(gesture_tracker):
             results_file_name = os.path.join(folder_name,  "capture_") + time + ".csv"
             classification = input("what do you want to call this classifier: ")
             classification = classification.lower().strip()
-            results_csv_file,csv_data = self.live_train(classification, file_name,0)
+            results_csv_file,csv_data = self.train_using_camera(classification, file_name,0)
             results.extend(csv_data)
             check = input("would you like to make another classifier?")
             if "y" in check.lower():
@@ -131,7 +132,24 @@ class gesture_data_ingestion(gesture_tracker):
         self.write_csv(results_file_name,results, self.gesture_model.number_of_coordinates)
         self.model_pipeline(results_file_name, os.path.join(folder_name, "results"),master_model)
 
-    def live_train(self, save_vid_folder : str, capture_index : int = 0, certain : bool = False):
+    def train_multiple_videos_of_same_gesture_using_camera(self,save_vid_folder : str, capture_index : int = 0, certain : bool = False):
+        index = 0
+        while True:
+            self.train_using_camera(save_vid_folder, capture_index, certain)
+            print(f"trained {index} video succesfuly")
+            index+=1
+            while True:
+                try: 
+                    train_again = noduro.check_boolean_input(input("would you like to train one more video?"))
+                    break
+                except:
+                    print("please try again")
+            if train_again: #user decided to not train another model. 
+                continue
+            else:
+                break
+        print(f"trained a total of {index} videos for gesture")
+    def train_using_camera(self, save_vid_folder : str, capture_index : int = 0, certain : bool = False):
         if certain is False:
             while True: #check if user wants to livetrain
                 inp = input("would you like to livetrain using camera? if cancel, type 'c' ") #input to check if value is correct
@@ -179,15 +197,19 @@ class gesture_data_ingestion(gesture_tracker):
             cv2.imshow("type q once framing is right, you will get 5 seconds before it cancels", frame)
         capture.release()
         cv2.destroyAllWindows()
-        save_results_file = list(os.path.splitext(save_vid_file)); results_csv = save_results_file[0] + ".csv"
-        save_results_file[0] += "_results"; save_results_file = ''.join(save_results_file)#remove file extension and add results to the end
-        csv_data, elapsed_time = self.gesture_model.realtime_analysis(capture_index = capture_index,
-                                                save_vid_file = save_vid_file,
-                                                save_results_vid_file = save_results_file,
-                                                classification = classification)
-        self.write_csv(results_csv,csv_data, self.gesture_model.number_of_coordinates)
-        return results_csv,csv_data
-    
+        
+        
+        file_name = noduro.join(save_vid_folder + "capture_" + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + ".mp4")
+        f, ext= os.path.splitext(file_name)
+        results = [f + "_results.csv",f + "_standardized_results.csv"]
+        self.realtime_analysis(capture_index = capture_index,
+                                                save_vid_file = file_name,
+                                                save_results_vid_file = None,
+                                                frame_skip=0)
+        self.convert_video_to_csv_files(file_name,results)
+
+
+
     def existing_training(self, classification : str, video_file):
         result_video_file = os.path.splitext(video_file); results_csv = result_video_file[0] + ".csv"
         result_video_file[0] += "_results"; result_video_file = ''.join(result_video_file)#remove file extension and add results to the end

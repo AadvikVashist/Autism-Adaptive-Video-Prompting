@@ -139,15 +139,15 @@ def get_dir_files(path: str, relative_path : bool = False,return_path_relative_t
 
 def check_boolean_input(input : str) -> bool:
     input = input.lower()
-    if "yes" in input:
+    if "yes" in input or "true" in input:
         return True
-    elif "no" in input:
+    elif "no" in input or "false" in input:
         return False
-    if "y" in input and "n" in input:
+    if ("y" in input or "t" in input) and ("n" in input or "f" in input):
         raise ValueError("yes or no not in input. Please try again")
-    elif "y" in input and len(input) < 4:
+    elif ("y" in input or "t" in input) and len(input) < 4:
         return True
-    elif "n" in input and len(input) < 4:
+    elif ("n" in input or "f" in input) and len(input) < 4:
         return False
     else:
         raise ValueError("yes or no not in input. Please try again")

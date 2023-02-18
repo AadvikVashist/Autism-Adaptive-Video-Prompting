@@ -445,7 +445,7 @@ class gesture_tracker:
             if starting_vid: #write frame to the file
                 curr.write(frame)
             
-            if self.etc["frame_index"] % self.etc["frame_skip"] == 0 : #if you want to skip frames
+            if self.etc["frame_skip"] != 0 and self.etc["frame_index"] % self.etc["frame_skip"] == 0 : #if you want to skip frames
                 frame = self.per_frame_analysis(frame, True) #run frame analysis
                 _ = standardize.convert_holistic_to_dict(self.processed_frame["holistic"])
                 self.save_pose.append(standardize.filter_body_parts(_, self.gesture_point_dict))
@@ -476,15 +476,13 @@ class gesture_tracker:
                 break
         self.end() #ending
 
-    def realtime_analysis(self, capture_index : int = 0, save_vid_file  : str = None, save_results_vid_file : str = None, classification : str = None, frame_skip = None):
+    def realtime_analysis(self, capture_index : int = 0, save_vid_file  : str = None, save_results_vid_file : str = None, frame_skip = None):
         if capture_index == None:
             capture_index = self.camera_selector() #select camera
         track["end of init to capture"] = time.time() - track["start"]; track["start"] = time.time()
         self.capture = cv2.VideoCapture(capture_index, cv2.CAP_DSHOW) #cap_show makes startup alot faster. Starts camera
         first_frame = True  
         landmarks = None
-        if classification:
-            saved = []
         self.looping_analysis(self.capture, save_results_vid_file, save_vid_file, frame_skip)
     
     def video_dimensions_fps(self,videofile):
@@ -496,14 +494,12 @@ class gesture_tracker:
         vid.release()
         return int(width),int(height),fps
     
-    def video_analysis(self, video = None, result_video = None, classification = None, frameskip = 1, standardize_pose = True):
+    def video_analysis(self, video = None, result_video = None, frameskip = 1, standardize_pose = True):
         if not video:
             video,result_video, = self.file_finder() #get file if not provided
         self.capture = cv2.VideoCapture(video)
         self.vid_info = self.video_dimensions_fps(video)
         self.video_file = video
-        if classification:
-            saved = []
         self.looping_analysis(self.capture, self.vid_info[0:2], self.vid_info[2], result_video, None, frame_skip = 1, standardize_pose=standardize_pose)
 
     def get_timer(self): #timers to check tracking data
