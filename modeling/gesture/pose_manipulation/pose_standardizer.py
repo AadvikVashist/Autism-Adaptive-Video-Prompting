@@ -23,12 +23,17 @@ def convert_holistic_to_dict(holistic_values):
 def iter_landmarks(landmark_list,feature_dict):
         new = []
         for index, (key, value) in enumerate(feature_dict.items()):
-            value = [(landmark_list[val].x,landmark_list[val].y,landmark_list[val].z) for val in value]
+            #check if dict landmark_list has the key, fill it with sklearn imputers
+            if landmark_list is None:
+                value = [(np.nan,np.nan,np.nan) for v in value]
+            else:
+                value = [(landmark_list[val].x,landmark_list[val].y,landmark_list[val].z) for val in value]
             new.extend(value)
         return new
 
 def filter_body_part(landmarks, ref_dict : dict):
-    landmarks = landmarks.landmark
+    if landmarks is not None:
+        landmarks = landmarks.landmark
     val = iter_landmarks(landmarks,ref_dict)
     return val
 
@@ -55,24 +60,6 @@ def display_pose_direct(points,gesture_point_dict):
     ax.set_ylabel("y")
     ax.set_zlabel("z")
     plt.show()
- 
-def updated_landmarks(self, landmark_list, feature : Union[list,str]):
-        landmark_list = landmark_list.landmark
-        def iter_landmarks(landmark_list,feat):
-            new = []
-            for index, (key, value) in enumerate(self.gesture_point_dict[feat].items()):
-                value = [(landmark_list[val].x,landmark_list[val].y,landmark_list[val].z) for val in value]
-                new.extend(value)
-            return new
-        if type(feature) == list:
-            ret =[]
-            for key,feat in feature.items():
-                val = iter_landmarks(landmark_list,feat)
-                ret.extend(val)
-            return ret
-        else:
-            val = iter_landmarks(landmark_list,feature)
-            return val
 
 def distance(point1,point2):
     dist = point2-point1
@@ -92,16 +79,24 @@ def calibrate_pose_using_eye_and_chest(points): #use the eye for scaling, and th
 
     chest = DICT["center"]["pose"]["chest"]; center = np.mean([(points["pose"].landmark[c].x,points["pose"].landmark[c].y,points["pose"].landmark[c].z) for c in chest],axis = 0)
     return dist/SCALE,center #return ratio between size of current image and SCALE value. 
-def center_and_scale(points, gpdict): #derived point values and the gesture point dictionary
+def center_and_scale_from_raw(points, gpdict): #derived point values and the gesture point dictionary
     curr_scale,center = calibrate_pose_using_eye_and_chest(points)
-    ret = {}
+    ret = []
     s = time.time()
     for key, value in gpdict.items():
-        if points[key] == None:
-            ret[key] = None
-            continue
         value = [x for v in value.values() for x in v]
-        value = [((points[key].landmark[val].x,points[key].landmark[val].y,points[key].landmark[val].z)-center)/curr_scale for val in value]
-        ret[key] = value
+        if points[key] == None:
+            value = [(np.nan,np.nan,np.nan) for v in value]
+        else:
+            value = [((points[key].landmark[val].x,points[key].landmark[val].y,points[key].landmark[val].z)-center)/curr_scale for val in value]
+        ret.append(value)
     return ret
+def flatten_gesture_point_dict_to_list(gpdict):
+    ret = []
+    for key, value in gpdict.items():
+        value = [x for v in value.values() for x in v]
+        ret.append(value)
+    return ret
+def flatten_3d_to_1d(points : list):
+    return np.array([x for v in points for x in v]).flatten()
 # def standardize_pose(points):

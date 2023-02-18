@@ -124,15 +124,40 @@ def flatten(d):
         except:
             ret.append(i)
     return ret
-def get_dir_files(path: str, relative_path : bool = False):
+def get_dir_files(path: str, relative_path : bool = False,return_path_relative_to_base : bool = False):
     if relative_path:
         path = subdir_path(path) 
     else:
         path = join(path)
-    result = [os.path.join(dp, f).replace("\\","/") for dp, dn, filenames in os.walk(path) for f in filenames if "pycache" not in dp and "git" not in dp]
+    if return_path_relative_to_base:
+
+        result = [join(os.path.relpath(dp, path), f) for dp, dn, filenames in os.walk(path) for f in filenames if "pycache" not in dp and "git" not in dp]
+    else:
+        result = [os.path.join(dp, f).replace("\\","/") for dp, dn, filenames in os.walk(path) for f in filenames if "pycache" not in dp and "git" not in dp]
 
     return result
 
+def check_boolean_input(input : str) -> bool:
+    input = input.lower()
+    if "yes" in input:
+        return True
+    elif "no" in input:
+        return False
+    if "y" in input and "n" in input:
+        raise ValueError("yes or no not in input. Please try again")
+    elif "y" in input and len(input) < 4:
+        return True
+    elif "n" in input and len(input) < 4:
+        return False
+    else:
+        raise ValueError("yes or no not in input. Please try again")
+def make_dir_if_not_exist(file : str, relative_path = False):
+    try:
+        os.makedirs(file)
+        print("made directory '"+file+"'")
+    except FileExistsError:
+        print("directory", file, "already exists")
+        pass
 if __name__ == '__main__':
     print("testing get_root:", get_root())
     print("testing subdir_path with desktop\\air\\hi/hi/wasd/how.py:", subdir_path("desktop\\air\\hi/hi/wasd/how.py"))

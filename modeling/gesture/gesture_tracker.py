@@ -14,6 +14,7 @@ import noduro
 import noduro_code.read_settings as read_settings
 # main class for all gesture tracking related things
 import modeling.gesture.pose_manipulation.pose_standardizer as standardize
+import matplotlib.pyplot as plt
 global track
 track = {}
 class gesture_tracker:
@@ -80,7 +81,7 @@ class gesture_tracker:
             self.gesture_point_dict["face"] = points.get_face_dict()
             self.etc["colormap"]["cmap_spacing"] = 1/(len(self.gesture_point_dict["face"].keys())-1)*0.8
             self.model_and_solution["holistic_solution"] = mp.solutions.holistic
-            self.model_and_solution["holistic_model"] = self.model_and_solution["holistic_solution"].Holistic(static_image_mode=True,model_complexity=1,
+            self.model_and_solution["holistic_model"] = self.model_and_solution["holistic_solution"].Holistic(static_image_mode=False,model_complexity=1,
                                                                     enable_segmentation =False,
                                                                     refine_face_landmarks=True,
                                                                     min_tracking_confidence=max(self.tracking_or_not["hand_confidence"],self.tracking_or_not["face_confidence"], self.tracking_or_not["pose_confidence"]),
@@ -403,10 +404,9 @@ class gesture_tracker:
     def frame_by_frame_check(self, frame,landmarks, bool):
         return frame
     
-    def looping_analysis(self, videoCapture : object, video_shape = None, fps = None,  result_vid : str = None, starting_vid: str = None, frame_skip : int = None):
+    def looping_analysis(self, videoCapture : object, video_shape = None, fps = None,  result_vid : str = None, starting_vid: str = None, frame_skip : int = None, standardize_pose : bool = False):
         self.processed_frame = {}
         self.visibilty_dict = {}
-
         
         if fps is None:
             fps = videoCapture.get(cv2.CAP_PROP_FPS)
@@ -433,7 +433,9 @@ class gesture_tracker:
                 isColor = True)
         #loops
         self.etc["frame_index"] = 0 
-        
+        self.save_pose = []
+        if standardize_pose:
+            self.save_calibrated_pose = []
         track["capture to b4 loop"] = time.time() - track["start"]; track["start"] = time.time()        
         while True:
             _, frame = videoCapture.read()
@@ -445,8 +447,10 @@ class gesture_tracker:
             
             if self.etc["frame_index"] % self.etc["frame_skip"] == 0 : #if you want to skip frames
                 frame = self.per_frame_analysis(frame, True) #run frame analysis
-                standardized_pose = standardize.center_and_scale(standardize.convert_holistic_to_dict(self.processed_frame["holistic"]), self.gesture_point_dict)
-                
+                _ = standardize.convert_holistic_to_dict(self.processed_frame["holistic"])
+                self.save_pose.append(standardize.filter_body_parts(_, self.gesture_point_dict))
+                if standardize_pose:
+                    self.save_calibrated_pose.append(standardize.center_and_scale_from_raw(_, self.gesture_point_dict))
             if self.tracking_or_not["hand"] and self.tracking_or_not["pose"] and self.tracking_or_not["face"]:
                 frame = self.draw_holistic(frame, self.processed_frame["holistic"])
             
@@ -488,25 +492,19 @@ class gesture_tracker:
         _,frame = vid.read()
         height = vid.get(cv2.CAP_PROP_FRAME_HEIGHT)
         width = vid.get(cv2.CAP_PROP_FRAME_WIDTH)
-        fps = vid.get(cv2.CAP_PROP_FPS)
+        fps = int(np.round(vid.get(cv2.CAP_PROP_FPS),0))
         vid.release()
         return int(width),int(height),fps
     
-    def video_analysis(self, video = None, result_video = None, classification = None, frameskip = 1):
+    def video_analysis(self, video = None, result_video = None, classification = None, frameskip = 1, standardize_pose = True):
         if not video:
             video,result_video, = self.file_finder() #get file if not provided
         self.capture = cv2.VideoCapture(video)
         self.vid_info = self.video_dimensions_fps(video)
         self.video_file = video
-        result = cv2.VideoWriter(result_video, 
-                        fourcc = self.etc["video_codec"],
-                        fps = self.vid_info[2],
-                        frameSize= self.vid_info[0:2],
-                        isColor = True)   
         if classification:
             saved = []
-        self.processed_frame = {}
-        self.looping_analysis(self.capture, self.vid_info[0:2], self.vid_info[2], result_video, None, frame_skip = 1)
+        self.looping_analysis(self.capture, self.vid_info[0:2], self.vid_info[2], result_video, None, frame_skip = 1, standardize_pose=standardize_pose)
 
     def get_timer(self): #timers to check tracking data
         curr_reference = time.time()
@@ -533,8 +531,8 @@ class gesture_tracker:
     def end(self):
         return None
 
-if __name__ == '__main__':
-    a = gesture_tracker(frameskip = True)
-    a.realtime_analysis() #("C:/Users/aadvi/Desktop/Movie on 2-8-23 at 9.43 AM.mov")
-    # a.video_analysis("C:/Users/aadvi/Desktop/WIN_20230209_17_28_46_Pro.mp4")
+# if __name__ == '__main__':
+#     a = gesture_tracker(frameskip = True)
+#     # a.realtime_analysis() #("C:/Users/aadvi/Desktop/Movie on 2-8-23 at 9.43 AM.mov")
+#     a.video_analysis("C:/Users/aadvi/Desktop/Autism/Autism-Adaptive-Video-Prompting/data/raw/gestures/cutting/2023-02-18-10-14-06/test1.mp4")
 # print(np.mean(a.timer,axis = 1))

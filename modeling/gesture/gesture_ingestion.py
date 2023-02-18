@@ -10,27 +10,110 @@ from sklearn.linear_model import LogisticRegression, RidgeClassifier
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.metrics import accuracy_score # Accuracy metrics 
 import pickle 
-import sys
-x = sys.path
-print(x)
-# from gesture_tracker import gesture_tracker
+from modeling.gesture.gesture_tracker import gesture_tracker
 import noduro
 from datetime import datetime
 import cv2
+import numpy as np
+from  fuzzywuzzy import fuzz as fz
+import shutil
+import time
 # initialize mediapipe
+from sklearn.impute import SimpleImputer
+import modeling.gesture.pose_manipulation.pose_standardizer as pose_standardizer
 import noduro_code.read_settings as read_settings
 DEFAULT_FILE,_ = read_settings.get_settings()
 DEFAULT_FILE = DEFAULT_FILE["filesystem"]["gesture_paths"] #in settings
+file = DEFAULT_FILE.split("/")[0:-1]
+DEFAULT_FOLDER = noduro.subdir_path(*file)
 DICT = noduro.read_json(DEFAULT_FILE, True,True)
-class gesture_data_ingestion:
-    def __init__(self):
-        x = 0
-        # self.gesture_model = gesture_tracker(True, True, True, 0.7, 0.7, 0.7, 2)
+class gesture_data_ingestion(gesture_tracker):
+    def __init__(self,):
+        super().__init__(eye = True, face = True, hand = True, pose = True, eye_confidence = 0.7, face_confidence= 0.7, hand_confidence = 0.7, pose_confidence = 0.7,number_of_hands = 2,  frameskip = True)
+        self.gestures = os.listdir(DEFAULT_FOLDER)
+        self.gpd = pose_standardizer.flatten_gesture_point_dict_to_list(self.gesture_point_dict)
+    def compare_input_and_folders(self, options : str):
+        while True:
+                inp = input("found a folder in directory with similar same name called '" + options + "', is this the right one? if cancel, type 'c' ") #input to check if value is correct
+                if inp.strip().lower() == "c":
+                    return None
+                try:
+                    inp = noduro.check_boolean_input(inp)
+                    print("registered", inp)
+                    break
+                except:
+                    print("try again please")
+                    pass
+        return inp
+    def check_if_gesture_exists(self, gesture_name : str) -> str:
+        if any([gesture_name.lower().strip() == a.lower().strip() for a in self.gestures]): #if there is a direct match
+            string = [a for a in self.gestures if gesture_name.lower().strip() == a.lower().strip()][0]
+            return noduro.join(DEFAULT_FOLDER,string)
+        if any([True if fz.ratio(gesture_name.lower().strip(),a.lower().strip()) > 70 else False for a in self.gestures]): #check if 70% chance or greater
+            string = [fz.ratio(gesture_name.lower().strip(),a.lower().strip()) for a in self.gestures] # get the value
+            a = np.argsort(string) # get the indexes from least to greatest based on match percentages
+            for index in range(len(a)-1,len(a)-4,-1): #check the top 3 options
+                string = self.gestures[a[index]] #current string option
+                bools = self.compare_input_and_folders(string) # check whether the user confirms
+                if bools is True:
+                    return noduro.join(DEFAULT_FOLDER,string)
+        return None
+    
+    def fill_nans_with_imputer_for_sklearn_regression(self, list_2d : list) -> list:
+        #check if the class has a variable named self.imputer
+        if not hasattr(self, 'imputer'):
+            self.imputer = SimpleImputer(missing_values=np.nan, strategy='mean')
+        list_1d = [pose_standardizer.flatten_3d_to_1d(d) for d in list_2d]
+        return self.imputer.fit_transform(list_1d)
+    def save_points_as_csv(self, file : str, points : list) -> None:
+        val = 0
+        keys = list(self.gesture_point_dict.keys())
+        points = list(points)
+        if not os.path.exists(file):
+            #iterate over self.gpd, formatting each index as key + "_" + index + "_" + X/Y/Z
+            row = [keys[index] + "_" + str(v) + "_" + alpha for index,value in enumerate(self.gpd) for v in value for alpha in ["x","y","z"]]
+            points.insert(0,row)
+        
+        noduro.write_csv(file,points,False,False,True) 
+    def intitialize_current_gesture_set(self, inputted_value : str = None, existing_files : bool = None): #take a single gesture string, analyze the directory, and train get the csv's for those videos. 
+        if inputted_value is None:
+            inputted_value = input("what is the name of the gesture you want to train? ")
+        dir = self.check_if_gesture_exists(inputted_value)
+        if dir is None: #if the directory doesn't exist
+            noduro.make_dir_if_not_exist(noduro.join(DEFAULT_FOLDER,inputted_value))
+        self.current_time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        cwd = noduro.join(DEFAULT_FOLDER,inputted_value, self.current_time)
+        noduro.make_dir_if_not_exist(cwd)
+        
+        if existing_files:
+            folder_path = noduro.folder_selector()
+            folder = os.listdir(folder_path)
+            for f in folder:
+                send_folder = noduro.join(folder_path,f)
+                recieve_folder = noduro.join(cwd,f)
+                shutil.move(send_folder,recieve_folder)
+                print("moved", send_folder, "to", recieve_folder)
+        elif existing_files == False:
+            self.live_train(save_vid_folder = cwd, certain = False)
+        if existing_files is not None:
+            self.train_gesture_using_folder_videos_recurse(cwd)
+
+    def train_gesture_using_folder_videos_recurse(self, folder_path):
+        folder_files = noduro.get_dir_files(folder_path, False,False)
+        for file in folder_files:
+            f, ext = os.path.splitext(file) 
+            result_file = f + "_results.csv"
+            standardized_result_file = f + "_standardized_results.csv"
+            if ext in [".mp4", ".m4a"] and result_file not in folder_files and standardized_result_file not in folder_files:
+                self.video_analysis(file,None,None, 1, standardize_pose = True) #analyze the video and get a list of the results
+                #fill nanes with imputer for self.save_pose and self.save_calibrated_pose
+                self.save_pose = self.fill_nans_with_imputer_for_sklearn_regression(self.save_pose)
+                self.save_calibrated_pose = self.fill_nans_with_imputer_for_sklearn_regression(self.save_calibrated_pose)
+                self.save_points_as_csv(result_file,self.save_pose) # write raw results
+                self.save_points_as_csv(standardized_result_file,self.save_calibrated_pose)#write actual results
     def make_training_set(self, master_model : bool = False):
         folder_name = noduro.folder_selector()
         results = []
-        index = 0
-        time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         
         while True:
             file_name = noduro.join(folder_name,  "capture_") + time + ".mp4"
@@ -47,26 +130,55 @@ class gesture_data_ingestion:
                 break
         self.write_csv(results_file_name,results, self.gesture_model.number_of_coordinates)
         self.model_pipeline(results_file_name, os.path.join(folder_name, "results"),master_model)
-    def write_csv(self, filename, rows, num_coords):                        
-        with open(filename, mode='w', newline='') as f:
-            csv_writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-            landmarks = ['class']
-            for val in range(1, num_coords+1):
-                landmarks += ['x{}'.format(val), 'y{}'.format(val), 'z{}'.format(val), 'v{}'.format(val)]
-            csv_writer.writerow(landmarks)
-            for row in rows:
-                csv_writer.writerow(row)
-    
-    
-    def live_train(self, classification : str, save_vid_file  : str, capture_index : int = 0):
+
+    def live_train(self, save_vid_folder : str, capture_index : int = 0, certain : bool = False):
+        if certain is False:
+            while True: #check if user wants to livetrain
+                inp = input("would you like to livetrain using camera? if cancel, type 'c' ") #input to check if value is correct
+                if inp.strip().lower() == "c":
+                    return None
+                try:
+                    inp = noduro.check_boolean_input(inp)
+                    print("registered", inp)
+                    break
+                except:
+                    print("try again please")
+                    pass
+        
         capture = cv2.VideoCapture(capture_index, cv2.CAP_DSHOW)
-        while True:
+        start = time.time()
+        showTime = True
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        text1 = "type q once you have the framing"
+        text2 = "you have 5 seconds to get ready"
+        # get boundary of this text
+        text1size = cv2.getTextSize(text1, font, 1, 2)[0]
+        text2size = cv2.getTextSize(text2, font, 1, 2)[0]
+
+
+        while True: #get the framing of the video right so that data is accurate
             _, frame = capture.read()
-            cv2.imshow("type q once framing is right", cv2.flip(frame,1))
+            frame = cv2.flip(frame,1)
+            if showTime:
+                start = time.time()
+                text1X = int((frame.shape[1] - text1size[0]) / 2)
+                text2X = int((frame.shape[1] - text2size[0]) / 2)
+                cv2.putText(frame, text1, (text1X,int(frame.shape[1]/15)), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 2)
+                cv2.putText(frame, text2, (text2X ,int(frame.shape[1]/15+text1size[1]*1.25)), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 2)
+            else:
+                #use cv2.puttext to display text in frame with number of integer seconds left using time.time() - start. 
+                tim = str(int(5 - (time.time() - start)))
+                textsize = cv2.getTextSize(tim, font, 15, 25)[0]
+                textX = int((frame.shape[1] - textsize[0]) / 2)
+                textY = int((frame.shape[0] + textsize[1]) / 2)
+                cv2.putText(frame, tim, (textX, textY ), cv2.FONT_HERSHEY_SIMPLEX, 15, (255,255,255), 25)
             if cv2.waitKey(1) == ord('q'):
-                capture.release()
-                cv2.destroyAllWindows()
+                showTime = False
+            if time.time() - start >= 5:
                 break
+            cv2.imshow("type q once framing is right, you will get 5 seconds before it cancels", frame)
+        capture.release()
+        cv2.destroyAllWindows()
         save_results_file = list(os.path.splitext(save_vid_file)); results_csv = save_results_file[0] + ".csv"
         save_results_file[0] += "_results"; save_results_file = ''.join(save_results_file)#remove file extension and add results to the end
         csv_data, elapsed_time = self.gesture_model.realtime_analysis(capture_index = capture_index,
@@ -139,4 +251,5 @@ class gesture_data_ingestion:
         elif self.repo_writeable:
             raise ValueError ("This object does not have write access to master. Please make sure to set the __init__ value is_writeable to True. ")
 a = gesture_data_ingestion()
-results_csv = a.make_training_set(True)
+a.intitialize_current_gesture_set("cutting", existing_files = False)
+# a.save_points_as_csv("xyz.csv", [[1,2,2,3,4,1,41,2,2,2,1],[1,2,2,2,2,312,31,23,123,1,1,1]])
