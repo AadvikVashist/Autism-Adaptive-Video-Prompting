@@ -133,7 +133,7 @@ def get_dir_files(path: str, relative_path : bool = False,return_path_relative_t
 
         result = [join(os.path.relpath(dp, path), f) for dp, dn, filenames in os.walk(path) for f in filenames if "pycache" not in dp and "git" not in dp]
     else:
-        result = [os.path.join(dp, f).replace("\\","/") for dp, dn, filenames in os.walk(path) for f in filenames if "pycache" not in dp and "git" not in dp]
+        result = [join(dp, f) for dp, dn, filenames in os.walk(path) for f in filenames if "pycache" not in dp and "git" not in dp]
 
     return result
 

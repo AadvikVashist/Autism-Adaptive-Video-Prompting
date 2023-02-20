@@ -22,11 +22,9 @@ import time
 from sklearn.impute import SimpleImputer
 import modeling.gesture.pose_manipulation.pose_standardizer as pose_standardizer
 import noduro_code.read_settings as read_settings
-DEFAULT_FILE,_ = read_settings.get_settings()
-DEFAULT_FILE = DEFAULT_FILE["filesystem"]["gesture_paths"] #in settings
-file = DEFAULT_FILE.split("/")[0:-1]
-DEFAULT_FOLDER = noduro.subdir_path(*file)
-DICT = noduro.read_json(DEFAULT_FILE, True,True)
+DEFAULT_FOLDER,_ = read_settings.get_settings()
+DEFAULT_FOLDER = DEFAULT_FOLDER["filesystem"]["gesture_paths"] #in settings
+DEFAULT_FOLDER = noduro.subdir_path(DEFAULT_FOLDER)
 class gesture_data_ingestion(gesture_tracker):
     def __init__(self,):
         super().__init__(eye = True, face = True, hand = True, pose = True, eye_confidence = 0.7, face_confidence= 0.7, hand_confidence = 0.7, pose_confidence = 0.7,number_of_hands = 2,  frameskip = True)
@@ -65,6 +63,7 @@ class gesture_data_ingestion(gesture_tracker):
             self.imputer = SimpleImputer(missing_values=np.nan, strategy='mean')
         list_1d = [pose_standardizer.flatten_3d_to_1d(d) for d in list_2d]
         return self.imputer.fit_transform(list_1d)
+    
     def save_points_as_csv(self, file : str, points : list) -> None:
         val = 0
         keys = list(self.gesture_point_dict.keys())
@@ -74,7 +73,8 @@ class gesture_data_ingestion(gesture_tracker):
             row = [keys[index] + "_" + str(v) + "_" + alpha for index,value in enumerate(self.gpd) for v in value for alpha in ["x","y","z"]]
             points.insert(0,row)
         
-        noduro.write_csv(file,points,False,False,True) 
+        noduro.write_csv(file,points,False,False,True)
+    
     def intitialize_current_gesture_set(self, inputted_value : str = None, existing_files : bool = None): #take a single gesture string, analyze the directory, and train get the csv's for those videos. 
         if inputted_value is None:
             inputted_value = input("what is the name of the gesture you want to train? ")
@@ -105,6 +105,7 @@ class gesture_data_ingestion(gesture_tracker):
         self.save_calibrated_pose = self.fill_nans_with_imputer_for_sklearn_regression(self.save_calibrated_pose)
         self.save_points_as_csv(result_file_names[0],self.save_pose) # write raw results
         self.save_points_as_csv(result_file_names[1],self.save_calibrated_pose)#write actual results
+    
     def train_gesture_using_folder_videos_recurse(self, folder_path) -> None:
         folder_files = noduro.get_dir_files(folder_path, False,False)
         for file in folder_files:
@@ -112,25 +113,25 @@ class gesture_data_ingestion(gesture_tracker):
             results = [f + "_results.csv",f + "_standardized_results.csv"]
             if ext in [".mp4", ".m4a"] and all(results not in folder_files):
                 self.convert_video_to_csv_files(self, file,results)
-    def make_training_set(self, master_model : bool = False):
-        folder_name = noduro.folder_selector()
-        results = []
+    # def make_training_set(self, master_model : bool = False):
+    #     folder_name = noduro.folder_selector()
+    #     results = []
         
-        while True:
-            file_name = noduro.join(folder_name,  "capture_") + time + ".mp4"
-            results_file_name = os.path.join(folder_name,  "capture_") + time + ".csv"
-            classification = input("what do you want to call this classifier: ")
-            classification = classification.lower().strip()
-            results_csv_file,csv_data = self.train_using_camera(classification, file_name,0)
-            results.extend(csv_data)
-            check = input("would you like to make another classifier?")
-            if "y" in check.lower():
-                time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-                continue
-            else:
-                break
-        self.write_csv(results_file_name,results, self.gesture_model.number_of_coordinates)
-        self.model_pipeline(results_file_name, os.path.join(folder_name, "results"),master_model)
+    #     while True:
+    #         file_name = noduro.join(folder_name,  "capture_") + time + ".mp4"
+    #         results_file_name = os.path.join(folder_name,  "capture_") + time + ".csv"
+    #         classification = input("what do you want to call this classifier: ")
+    #         classification = classification.lower().strip()
+    #         results_csv_file,csv_data = self.train_using_camera(classification, file_name,0)
+    #         results.extend(csv_data)
+    #         check = input("would you like to make another classifier?")
+    #         if "y" in check.lower():
+    #             time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    #             continue
+    #         else:
+    #             break
+    #     self.write_csv(results_file_name,results, self.gesture_model.number_of_coordinates)
+    #     self.model_pipeline(results_file_name, os.path.join(folder_name, "results"),master_model)
 
     def train_multiple_videos_of_same_gesture_using_camera(self,save_vid_folder : str, capture_index : int = 0, certain : bool = False):
         index = 0
@@ -208,31 +209,55 @@ class gesture_data_ingestion(gesture_tracker):
                                                 frame_skip=0)
         self.convert_video_to_csv_files(file_name,results)
 
+    def sort_existing_gesture_data(self, folder : str = None) -> dict: #use noduro.get_dir_files to get all files in folder. If folder isn't provided use DEFAULT_FOLDER. Put all of the files into their own key in a dictionary, where the ones with the same root folder are together.
+        if folder is None:
+            folder = DEFAULT_FOLDER
+        files = noduro.get_dir_files(folder)
+        data = {}
+        for file in files:
+            f, ext = os.path.splitext(file)
+            gest = noduro.join(os.path.relpath(f,folder)).split('/')[0]
+            if ext == ".csv":
+                if gest in data:
+                    data[gest].append(file)
+                else:
+                    data[gest] = [file]
+        return data
 
-
-    def existing_training(self, classification : str, video_file):
-        result_video_file = os.path.splitext(video_file); results_csv = result_video_file[0] + ".csv"
-        result_video_file[0] += "_results"; result_video_file = ''.join(result_video_file)#remove file extension and add results to the end
-        csv_data = self.gesture_model.video_analysis(video = video_file, 
-                                                        result_video = result_video_file,
-                                                        classification = classification)
-        self.write_csv(results_csv,csv_data, self.gesture_model.number_of_coordinates)
+    def read_existing_gesture_data(self, folder : str = None) -> tuple:
+        if folder is None:
+            folder = DEFAULT_FOLDER
+        data = self.sort_existing_gesture_data(folder)
+        ret = {}; point_names = None
+        for key in data:
+            k = []
+            for file in data[key]:
+                csv_data = noduro.read_csv(file,False)
+                k.extend(np.array(csv_data[1::],dtype = np.float16))
+                point_names = csv_data[0]
+            ret[key] = k
+        ret = self.add_class_to_data(ret)
+        return ret, point_names
     
-    
-    def read_collected_data(self, filename):
-        df = pd.read_csv(filename)
-        df.head()
-        df.tail()
-        X = df.drop('class', axis=1) # features
-        y = df['class'] # target value
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=1234)
+    def add_class_to_data(self, data : dict): #insert a class column at index 0in  all of the lists of data in the dictionary key with the class being called the key 
+        for k in data:
+            datum = np.array(data[k], dtype = object)
+            datum = np.insert(datum,0,[k for i in range(datum.shape[0])], axis = 1)
+            data[k] = datum
+        return data
+        
+    def seed_data_from_dict(self, data : dict):
+        datum = np.array([x for v in data.values() for x in v])
+        X = datum[:,0]
+        Y = datum[:,1::]
+        X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.3, random_state=1234)
         return X_train, X_test, y_train, y_test
-    
-    
-    def model_pipeline(self, input_csv_file, output_file_base: str = None, master_model : bool = False):
+   
+    def model_pipeline(self, input_folder : str = None, output_file_base: str = None): # , master_model : bool = False
+        if input_folder is None:
+            input_folder = DEFAULT_FOLDER
         if output_file_base is None:
-            output_file_base = list(os.path.splitext(input_csv_file))
-            output_file_base = output_file_base[0]
+            output_file_base = DEFAULT_FOLDER + "_" + datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         pipelines = {
             'lr':make_pipeline(StandardScaler(), LogisticRegression()),
             'rc':make_pipeline(StandardScaler(), RidgeClassifier()),
@@ -240,9 +265,10 @@ class gesture_data_ingestion(gesture_tracker):
             'gb':make_pipeline(StandardScaler(), GradientBoostingClassifier()),
         }
         fit_models = {}
-        X_train, X_test, y_train, y_test = self.read_collected_data(input_csv_file)
+        data, display = self.read_existing_gesture_data(input_folder)
+        X_train, X_test, y_train, y_test = self.seed_data_from_dict(data)
         for algo, pipeline in pipelines.items():
-            model = pipeline.fit(X_train.values, y_train.values)
+            model = pipeline.fit(X_train, y_train)
             fit_models[algo] = model
         fit_models['rc'].predict(X_test)
         
@@ -260,18 +286,10 @@ class gesture_data_ingestion(gesture_tracker):
             pickle.dump(fit_models['rf'], f)
         with open((output_file_base + '_gb.pkl'), 'wb') as f: #.pkl file
             pickle.dump(fit_models['gb'], f) 
-        if self.repo_writeable and master_model:
-            output_file_base = os.path.join(os.getcwd(), "model", "model_" + datetime.now().strftime("%Y-%m-%d-%H-%M-%S"))
-            with open((output_file_base + '_lr.pkl'), 'wb') as f: #.pkl file
-                pickle.dump(fit_models['lr'], f)
-            with open((output_file_base + '_rc.pkl'), 'wb') as f: #.pkl file
-                pickle.dump(fit_models['rc'], f)
-            with open((output_file_base + '_rf.pkl'), 'wb') as f: #.pkl file
-                pickle.dump(fit_models['rf'], f)
-            with open((output_file_base + '_gb.pkl'), 'wb') as f: #.pkl file
-                pickle.dump(fit_models['gb'], f) 
-        elif self.repo_writeable:
-            raise ValueError ("This object does not have write access to master. Please make sure to set the __init__ value is_writeable to True. ")
-a = gesture_data_ingestion()
-a.intitialize_current_gesture_set("cutting", existing_files = False)
+if __name__ == "__main__":
+    #make gesture data ingestion object and retrain the existing data using DEFAULT_FOLDER
+    a = gesture_data_ingestion()
+    a.model_pipeline()
+# a = gesture_data_ingestion()
+# a.intitialize_current_gesture_set("cutting", existing_files = False)
 # a.save_points_as_csv("xyz.csv", [[1,2,2,3,4,1,41,2,2,2,1],[1,2,2,2,2,312,31,23,123,1,1,1]])

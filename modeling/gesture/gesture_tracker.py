@@ -15,6 +15,7 @@ import noduro_code.read_settings as read_settings
 # main class for all gesture tracking related things
 import modeling.gesture.pose_manipulation.pose_standardizer as standardize
 import matplotlib.pyplot as plt
+import modeling.gesture.check_distance as check_distance
 global track
 track = {}
 class gesture_tracker:
@@ -65,9 +66,9 @@ class gesture_tracker:
         #                         "4" : cv2.dnn_superres.DnnSuperResImpl_create(),
         #                         }
         # for i in range(2,5):
-        #     self.super_resolution[str(i)].readModel(noduro.subdir_path("models/upscaling/ESPCN_x" + str(i) + ".pb"))
+        #     self.super_resolution[str(i)].readModel(noduro.subdir_path("data/analyzed/ESPCN_x" + str(i) + ".pb"))
         #     self.super_resolution[str(i)].setModel("espcn", i)
-        #     a = noduro.subdir_path("models/upscaling/ESPCN_x" + str(i) + ".pb")
+        #     a = noduro.subdir_path("data/analyzed/ESPCN_x" + str(i) + ".pb")
         
         self.mediapipe_drawing = mp.solutions.drawing_utils #setup
         self.mediapipe_drawing_styles = mp.solutions.drawing_styles
@@ -267,50 +268,6 @@ class gesture_tracker:
                 cv2.waitKey(0)
         return frame
     
-    # def face_pose(self, frame, landmark_list):
-    #     nose_list = [33, 263, 1, 61, 291, 199]
-    #     height, width, _ = frame.shape
-    #     nose_listed = np.array([list(self._normalized_to_pixel_coordinates(land.x, land.y, width, height)) for index, land in enumerate(landmark_list.landmark) if index in nose_list])
-    #     for i in nose_listed:
-    #         try:
-    #             cv2.circle(frame,i,2,(255,255,255),2)
-    #         except:
-    #             pass
-    #     face_2d = [(lm.x * width, lm.y * height) for idx, lm in enumerate(landmark_list.landmark) if idx in nose_list]
-    #     face_3d = [(lm.x * width, lm.y * height, lm.z ) for idx, lm in enumerate(landmark_list.landmark) if idx in nose_list]
-    #     nose_3d = [landmark_list.landmark[1].x*width, landmark_list.landmark[1].y*height,landmark_list.landmark[1].z*3000]
-    #     nose_2d = [landmark_list.landmark[1].x*width, landmark_list.landmark[1].y*height]
-        
-    #     # Convert to NumPy array
-    #     face_2d = np.array(face_2d, dtype=np.float64)
-    #     face_3d = np.array(face_3d, dtype=np.float64)
-
-    #     # The camera matrix
-    #     focal_length = 1 * width
-
-    #     cam_matrix = np.array([ [focal_length, 0, height / 2],
-    #                             [0, focal_length, width / 2],
-    #                             [0, 0, 1]])
-
-    #     # The Distance Matrix
-    #     dist_matrix = np.zeros((4, 1), dtype=np.float64)
-
-    #     # Solve PnP
-    #     success, rot_vec, trans_vec = cv2.solvePnP(face_3d, face_2d, cam_matrix, dist_matrix)
-
-    #     # Get rotational matrix
-    #     rmat, jac = cv2.Rodrigues(rot_vec)
-
-    #     # Get angles
-    #     angles, mtxR, mtxQ, Qx, Qy, Qz = cv2.RQDecomp3x3(rmat)
-
-    #     # Get the y rotation degree
-    #     x = angles[0] * 360
-    #     y = angles[1] * 360
-    #     z = angles[2] * 360
-    #     print(np.around((x,y,z),2))
-    #     return frame
-    
     def eyes(self, frame, landmarks):
         image_rows, image_cols, _ = frame.shape
         face_list, pose_list = eye_tracking.landmarks_to_lists(landmarks)
@@ -404,7 +361,7 @@ class gesture_tracker:
     def frame_by_frame_check(self, frame,landmarks, bool):
         return frame
     
-    def looping_analysis(self, videoCapture : object, video_shape = None, fps = None,  result_vid : str = None, starting_vid: str = None, frame_skip : int = None, standardize_pose : bool = False):
+    def looping_analysis(self, videoCapture : object, video_shape = None, fps = None,  result_vid : str = None, starting_vid: str = None, frame_skip : int = None, save_pose : bool = False, standardize_pose : bool = False):
         self.processed_frame = {}
         self.visibilty_dict = {}
         
@@ -433,9 +390,15 @@ class gesture_tracker:
                 isColor = True)
         #loops
         self.etc["frame_index"] = 0 
-        self.save_pose = []
+        if save_pose:
+            self.save_pose = []
         if standardize_pose:
             self.save_calibrated_pose = []
+            self.moving_average = []
+            try:
+                self.etc["moving_average_length"] = int(30/frame_skip)
+            except:
+                self.etc["moving_average_length"] = 5
         track["capture to b4 loop"] = time.time() - track["start"]; track["start"] = time.time()        
         while True:
             _, frame = videoCapture.read()
@@ -447,10 +410,23 @@ class gesture_tracker:
             
             if self.etc["frame_skip"] != 0 and self.etc["frame_index"] % self.etc["frame_skip"] == 0 : #if you want to skip frames
                 frame = self.per_frame_analysis(frame, True) #run frame analysis
-                _ = standardize.convert_holistic_to_dict(self.processed_frame["holistic"])
-                self.save_pose.append(standardize.filter_body_parts(_, self.gesture_point_dict))
+                if save_pose or standardize_pose:
+                    gesture_dic = standardize.convert_holistic_to_dict(self.processed_frame["holistic"])
+
+                if save_pose:
+                    self.save_pose.append(standardize.filter_body_parts(gesture_dic, self.gesture_point_dict))
+                # closer_or_farther = check_distance.closer_or_farther(_)
+                # print(closer_or_farther)
                 if standardize_pose:
-                    self.save_calibrated_pose.append(standardize.center_and_scale_from_raw(_, self.gesture_point_dict))
+                    self.moving_average
+                    stand, distance = standardize.center_and_scale_from_raw(gesture_dic, self.gesture_point_dict,self.moving_average)
+                    #if the array isn't long enough, force add
+                    if len(self.moving_average) < self.etc["moving_average_length"]:
+                        self.moving_average.append(distance)
+                    else:
+                        self.moving_average.append(distance)
+                        del self.moving_average[0]
+                    self.save_calibrated_pose.append(stand)
             if self.tracking_or_not["hand"] and self.tracking_or_not["pose"] and self.tracking_or_not["face"]:
                 frame = self.draw_holistic(frame, self.processed_frame["holistic"])
             
@@ -476,14 +452,14 @@ class gesture_tracker:
                 break
         self.end() #ending
 
-    def realtime_analysis(self, capture_index : int = 0, save_vid_file  : str = None, save_results_vid_file : str = None, frame_skip = None):
+    def realtime_analysis(self, capture_index : int = 0, save_vid_file  : str = None, save_results_vid_file : str = None, frame_skip = None, analyze = True):
         if capture_index == None:
             capture_index = self.camera_selector() #select camera
         track["end of init to capture"] = time.time() - track["start"]; track["start"] = time.time()
         self.capture = cv2.VideoCapture(capture_index, cv2.CAP_DSHOW) #cap_show makes startup alot faster. Starts camera
         first_frame = True  
         landmarks = None
-        self.looping_analysis(self.capture, save_results_vid_file, save_vid_file, frame_skip)
+        self.looping_analysis(self.capture, save_results_vid_file, save_vid_file, frame_skip,save_pose = analyze, standardize_pose = analyze)    
     
     def video_dimensions_fps(self,videofile):
         vid = cv2.VideoCapture(videofile) #vid capture object
@@ -527,8 +503,8 @@ class gesture_tracker:
     def end(self):
         return None
 
-# if __name__ == '__main__':
-#     a = gesture_tracker(frameskip = True)
-#     # a.realtime_analysis() #("C:/Users/aadvi/Desktop/Movie on 2-8-23 at 9.43 AM.mov")
+if __name__ == '__main__':
+    a = gesture_tracker(frameskip = True)
+    a.realtime_analysis() #("C:/Users/aadvi/Desktop/Movie on 2-8-23 at 9.43 AM.mov")
 #     a.video_analysis("C:/Users/aadvi/Desktop/Autism/Autism-Adaptive-Video-Prompting/data/raw/gestures/cutting/2023-02-18-10-14-06/test1.mp4")
 # print(np.mean(a.timer,axis = 1))

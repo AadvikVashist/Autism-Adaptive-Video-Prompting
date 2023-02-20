@@ -79,8 +79,12 @@ def calibrate_pose_using_eye_and_chest(points): #use the eye for scaling, and th
 
     chest = DICT["center"]["pose"]["chest"]; center = np.mean([(points["pose"].landmark[c].x,points["pose"].landmark[c].y,points["pose"].landmark[c].z) for c in chest],axis = 0)
     return dist/SCALE,center #return ratio between size of current image and SCALE value. 
-def center_and_scale_from_raw(points, gpdict): #derived point values and the gesture point dictionary
+def center_and_scale_from_raw(points, gpdict, moving_average = None): #derived point values and the gesture point dictionary
     curr_scale,center = calibrate_pose_using_eye_and_chest(points)
+    if moving_average is not None:
+        set_scale = np.mean((curr_scale,np.mean(moving_average)))
+    else:
+        set_scale = curr_scale
     ret = []
     s = time.time()
     for key, value in gpdict.items():
@@ -90,13 +94,16 @@ def center_and_scale_from_raw(points, gpdict): #derived point values and the ges
         else:
             value = [((points[key].landmark[val].x,points[key].landmark[val].y,points[key].landmark[val].z)-center)/curr_scale for val in value]
         ret.append(value)
-    return ret
+    print(set_scale-curr_scale)
+    return ret,curr_scale
+
 def flatten_gesture_point_dict_to_list(gpdict):
     ret = []
     for key, value in gpdict.items():
         value = [x for v in value.values() for x in v]
         ret.append(value)
     return ret
+
 def flatten_3d_to_1d(points : list):
     return np.array([x for v in points for x in v]).flatten()
 # def standardize_pose(points):
