@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from numpy import linalg
+from numpy.polynomial import Polynomial as P
 import warnings
 def perpendicular_bisector(a,b):
     vx = b[0] - a[0]
@@ -26,16 +27,26 @@ def distance_between_line_and_point( p1,p2,p3):
 
 def nose_line_angle(list):
     with warnings.catch_warnings():
-        warnings.filterwarnings('ignore')
         try:
             fit = np.polyfit(list[:,0],list[:,1],1)
-        except np.RankWarning:
+        except:
             fit = [100000,0]
         return fit, -1*np.degrees(np.arctan(1/fit[0]))
 
-def angle_between_two_lines(M1,M2):
+def angle_between_two_lines(M1,M11,M2,M22):
+    if M11 == 0:
+        Mx = 0
+    else:
+        Mx = M1/M11
+    if M22 == 0:
+        My = 0
+    else:
+        My = M2/M22
+    
     if M1*M2 == -1:
         return 90
+    elif abs(M1-M2) < 0.001:
+        return 0
     else:
         angle = abs((M2 - M1) / (1 + M1 * M2))
         return np.degrees(np.arctan(angle))
@@ -50,7 +61,8 @@ def calculate_eye_ratio( left_iris_list, right_iris_list, chest_list, nose_list)
     eye_center = np.asarray([int(np.mean((right_box[0], left_box[0] + left_box[2]))),int(np.mean((right_box[1], left_box[1] + left_box[3])))])
     body_center = np.mean(chest_list, axis = 0, dtype = np.int16)
     body_slope = perpendicular_bisector(chest_list[0],chest_list[1])
-    new_point = np.asarray([int(body_center[0]+body_slope[0]*1000),int(body_center[1]+body_slope[1]*1000)])
+    factor = (eye_center[1]-body_center[1])/body_slope[1]*2
+    new_point = np.asarray([int(body_center[0]+body_slope[0]*factor),int(body_center[1]+body_slope[1]*factor)])
     
     eye_distance = distance_between_line_and_point(new_point, body_center, eye_center)
     chest_distance = pythag(chest_list[0],chest_list[1])/2
@@ -58,8 +70,9 @@ def calculate_eye_ratio( left_iris_list, right_iris_list, chest_list, nose_list)
 
     nose_line, nose_angle = nose_line_angle(nose_list)
     nose_line = nose_line[0]
-
-    angle_diff = angle_between_two_lines(-1/nose_line, body_slope[1]/body_slope[0])
+    if nose_line == 0:
+        print("h")
+    angle_diff = angle_between_two_lines(-1,nose_line, body_slope[1],body_slope[0])
     return king_joshua_ratio, nose_angle,angle_diff, new_point, body_center, eye_center, left_box, right_box
 
 def draw_eye_calculations(frame,eye_center,angle_diff,king_joshua_ratio, body_center, nose_angle, chest_list, new_point):  
