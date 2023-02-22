@@ -22,14 +22,16 @@ import time
 from sklearn.impute import SimpleImputer
 import modeling.gesture.pose_manipulation.pose_standardizer as pose_standardizer
 import noduro_code.read_settings as read_settings
-DEFAULT_FOLDER,_ = read_settings.get_settings()
-DEFAULT_FOLDER = DEFAULT_FOLDER["filesystem"]["gesture_paths"] #in settings
-DEFAULT_FOLDER = noduro.subdir_path(DEFAULT_FOLDER)
 class gesture_data_ingestion(gesture_tracker):
     def __init__(self,):
         super().__init__(eye = True, face = True, hand = True, pose = True, eye_confidence = 0.7, face_confidence= 0.7, hand_confidence = 0.7, pose_confidence = 0.7,number_of_hands = 2,  frameskip = True)
-        self.gestures = os.listdir(DEFAULT_FOLDER)
+        self.settings, _ = read_settings.get_settings()
+        self.default_folder = self.settings["filesystem"]["gesture_paths"] #in settings
+        self.default_folder = noduro.subdir_path(self.default_folder)
+
+        self.gestures = os.listdir(self.default_folder)
         self.gpd = pose_standardizer.flatten_gesture_point_dict_to_list(self.gesture_point_dict)
+
     def compare_input_and_folders(self, options : str):
         while True:
                 inp = input("found a folder in directory with similar same name called '" + options + "', is this the right one? if cancel, type 'c' ") #input to check if value is correct
@@ -46,7 +48,7 @@ class gesture_data_ingestion(gesture_tracker):
     def check_if_gesture_exists(self, gesture_name : str) -> str:
         if any([gesture_name.lower().strip() == a.lower().strip() for a in self.gestures]): #if there is a direct match
             string = [a for a in self.gestures if gesture_name.lower().strip() == a.lower().strip()][0]
-            return noduro.join(DEFAULT_FOLDER,string)
+            return noduro.join(self.default_folder,string)
         if any([True if fz.ratio(gesture_name.lower().strip(),a.lower().strip()) > 70 else False for a in self.gestures]): #check if 70% chance or greater
             string = [fz.ratio(gesture_name.lower().strip(),a.lower().strip()) for a in self.gestures] # get the value
             a = np.argsort(string) # get the indexes from least to greatest based on match percentages
@@ -54,7 +56,7 @@ class gesture_data_ingestion(gesture_tracker):
                 string = self.gestures[a[index]] #current string option
                 bools = self.compare_input_and_folders(string) # check whether the user confirms
                 if bools is True:
-                    return noduro.join(DEFAULT_FOLDER,string)
+                    return noduro.join(self.default_folder,string)
         return None
     
     def fill_nans_with_imputer_for_sklearn_regression(self, list_2d : list) -> list:
@@ -75,14 +77,36 @@ class gesture_data_ingestion(gesture_tracker):
         
         noduro.write_csv(file,points,False,False,True)
     
+    def add_data_to_training(self, inputted_value : str = None, existing_files : bool = None):
+        if inputted_value is None:
+            inputted_value = input("what is the name of the gesture you want to train? ")
+        dir = self.check_if_gesture_exists(inputted_value)
+        if dir is None: #if the directory doesn't exist
+            raise ValueError("gesture doesn't exist, run initialize_current_gesture_set first")
+        self.current_time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        cwd = noduro.join(self.default_folder,inputted_value, self.current_time)
+        noduro.make_dir_if_not_exist(cwd)
+        
+        if existing_files:
+            folder_path = noduro.folder_selector()
+            folder = os.listdir(folder_path)
+            for f in folder:
+                send_folder = noduro.join(folder_path,f)
+                recieve_folder = noduro.join(cwd,f)
+                shutil.move(send_folder,recieve_folder)
+                print("moved", send_folder, "to", recieve_folder)
+        elif existing_files == False:
+            self.train_multiple_videos_of_same_gesture_using_camera(save_vid_folder = cwd, certain = False)
+        if existing_files is not None:
+            self.train_gesture_using_folder_videos_recurse(cwd)
     def intitialize_current_gesture_set(self, inputted_value : str = None, existing_files : bool = None): #take a single gesture string, analyze the directory, and train get the csv's for those videos. 
         if inputted_value is None:
             inputted_value = input("what is the name of the gesture you want to train? ")
         dir = self.check_if_gesture_exists(inputted_value)
         if dir is None: #if the directory doesn't exist
-            noduro.make_dir_if_not_exist(noduro.join(DEFAULT_FOLDER,inputted_value))
+            noduro.make_dir_if_not_exist(noduro.join(self.default_folder,inputted_value))
         self.current_time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-        cwd = noduro.join(DEFAULT_FOLDER,inputted_value, self.current_time)
+        cwd = noduro.join(self.default_folder,inputted_value, self.current_time)
         noduro.make_dir_if_not_exist(cwd)
         
         if existing_files:
@@ -98,8 +122,8 @@ class gesture_data_ingestion(gesture_tracker):
         if existing_files is not None:
             self.train_gesture_using_folder_videos_recurse(cwd)
 
-    def convert_video_to_csv_files(self, file : str, result_file_names : str) -> None:   
-        self.video_analysis(file,None,None, 1, standardize_pose = True) #analyze the video and get a list of the results
+    def convert_video_to_csv_files(self, file : str, result_file_names : list) -> None:   
+        self.video_analysis(video = file,result_video = None,frame_skip = 1, standardize_pose = True) #analyze the video and get a list of the results
         #fill nanes with imputer for self.save_pose and self.save_calibrated_pose
         self.save_pose = self.fill_nans_with_imputer_for_sklearn_regression(self.save_pose)
         self.save_calibrated_pose = self.fill_nans_with_imputer_for_sklearn_regression(self.save_calibrated_pose)
@@ -111,7 +135,7 @@ class gesture_data_ingestion(gesture_tracker):
         for file in folder_files:
             f, ext= os.path.splitext(file)
             results = [f + "_results.csv",f + "_standardized_results.csv"]
-            if ext in [".mp4", ".m4a"] and all(results not in folder_files):
+            if ext in [".mp4", ".m4a"] and results[0] not in folder_files and results[1] not in folder_files:
                 self.convert_video_to_csv_files(self, file,results)
     # def make_training_set(self, master_model : bool = False):
     #     folder_name = noduro.folder_selector()
@@ -137,8 +161,8 @@ class gesture_data_ingestion(gesture_tracker):
         index = 0
         while True:
             self.train_using_camera(save_vid_folder, capture_index, certain)
-            print(f"trained {index} video succesfuly")
             index+=1
+            print(f"trained {index} videos succesfuly")
             while True:
                 try: 
                     train_again = noduro.check_boolean_input(input("would you like to train one more video?"))
@@ -150,6 +174,7 @@ class gesture_data_ingestion(gesture_tracker):
             else:
                 break
         print(f"trained a total of {index} videos for gesture")
+    
     def train_using_camera(self, save_vid_folder : str, capture_index : int = 0, certain : bool = False):
         if certain is False:
             while True: #check if user wants to livetrain
@@ -186,7 +211,7 @@ class gesture_data_ingestion(gesture_tracker):
                 cv2.putText(frame, text2, (text2X ,int(frame.shape[1]/15+text1size[1]*1.25)), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,0), 2)
             else:
                 #use cv2.puttext to display text in frame with number of integer seconds left using time.time() - start. 
-                tim = str(int(5 - (time.time() - start)))
+                tim = str(int(6 - (time.time() - start)))
                 textsize = cv2.getTextSize(tim, font, 15, 25)[0]
                 textX = int((frame.shape[1] - textsize[0]) / 2)
                 textY = int((frame.shape[0] + textsize[1]) / 2)
@@ -200,7 +225,7 @@ class gesture_data_ingestion(gesture_tracker):
         cv2.destroyAllWindows()
         
         
-        file_name = noduro.join(save_vid_folder + "capture_" + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + ".mp4")
+        file_name = noduro.join(save_vid_folder, "capture_" + datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + ".mp4")
         f, ext= os.path.splitext(file_name)
         results = [f + "_results.csv",f + "_standardized_results.csv"]
         self.realtime_analysis(capture_index = capture_index,
@@ -211,7 +236,7 @@ class gesture_data_ingestion(gesture_tracker):
 
     def sort_existing_gesture_data(self, folder : str = None) -> dict: #use noduro.get_dir_files to get all files in folder. If folder isn't provided use DEFAULT_FOLDER. Put all of the files into their own key in a dictionary, where the ones with the same root folder are together.
         if folder is None:
-            folder = DEFAULT_FOLDER
+            folder = self.default_folder
         files = noduro.get_dir_files(folder)
         data = {}
         for file in files:
@@ -226,7 +251,7 @@ class gesture_data_ingestion(gesture_tracker):
 
     def read_existing_gesture_data(self, folder : str = None) -> tuple:
         if folder is None:
-            folder = DEFAULT_FOLDER
+            folder = self.default_folder
         data = self.sort_existing_gesture_data(folder)
         ret = {}; point_names = None
         for key in data:
@@ -248,21 +273,23 @@ class gesture_data_ingestion(gesture_tracker):
         
     def seed_data_from_dict(self, data : dict):
         datum = np.array([x for v in data.values() for x in v])
-        X = datum[:,0]
-        Y = datum[:,1::]
+        Y = datum[:,0]
+        X = datum[:,1::]
         X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.3, random_state=1234)
         return X_train, X_test, y_train, y_test
    
     def model_pipeline(self, input_folder : str = None, output_file_base: str = None): # , master_model : bool = False
+        file_time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         if input_folder is None:
-            input_folder = DEFAULT_FOLDER
+            input_folder = self.default_folder
         if output_file_base is None:
-            output_file_base = DEFAULT_FOLDER + "_" + datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+            output_file_base = noduro.join(self.settings["filesystem"]["model_storage"],file_time)
+            noduro.make_dir_if_not_exist(output_file_base, True)
         pipelines = {
-            'lr':make_pipeline(StandardScaler(), LogisticRegression()),
-            'rc':make_pipeline(StandardScaler(), RidgeClassifier()),
-            'rf':make_pipeline(StandardScaler(), RandomForestClassifier()),
-            'gb':make_pipeline(StandardScaler(), GradientBoostingClassifier()),
+            'lr':make_pipeline(StandardScaler(), LogisticRegression(n_jobs =  7, max_iter = 1000)), #add warm_start = True (reuse the last solution as a base point (speed up processing))
+            'rc':make_pipeline(StandardScaler(), RidgeClassifier(max_iter = 1000)),
+            'rf':make_pipeline(StandardScaler(), RandomForestClassifier(n_jobs = 7, n_estimators = 1000)),
+            'gb':make_pipeline(StandardScaler(), GradientBoostingClassifier(max_depth = 5, n_estimators = 1000))#add warm_start = True (reuse the last solution as a base point (speed up processing))
         }
         fit_models = {}
         data, display = self.read_existing_gesture_data(input_folder)
@@ -278,18 +305,15 @@ class gesture_data_ingestion(gesture_tracker):
             print(algo, accuracy_score(y_test, yhat)) #predicted algorithm accuracy_score
         
         #store predicted values
-        with open((output_file_base + '_lr.pkl'), 'wb') as f: #.pkl file
+        with open(noduro.join(output_file_base, 'lr.pkl'), 'wb') as f: #.pkl file
             pickle.dump(fit_models['lr'], f)
-        with open((output_file_base + '_rc.pkl'), 'wb') as f: #.pkl file
+        with open(noduro.join(output_file_base, 'rc.pkl'), 'wb') as f: #.pkl file
             pickle.dump(fit_models['rc'], f)
-        with open((output_file_base + '_rf.pkl'), 'wb') as f: #.pkl file
+        with open(noduro.join(output_file_base, 'rf.pkl'), 'wb') as f: #.pkl file
             pickle.dump(fit_models['rf'], f)
-        with open((output_file_base + '_gb.pkl'), 'wb') as f: #.pkl file
+        with open(noduro.join(output_file_base, 'gb.pkl'), 'wb') as f: #.pkl file
             pickle.dump(fit_models['gb'], f) 
 if __name__ == "__main__":
     #make gesture data ingestion object and retrain the existing data using DEFAULT_FOLDER
     a = gesture_data_ingestion()
     a.model_pipeline()
-# a = gesture_data_ingestion()
-# a.intitialize_current_gesture_set("cutting", existing_files = False)
-# a.save_points_as_csv("xyz.csv", [[1,2,2,3,4,1,41,2,2,2,1],[1,2,2,2,2,312,31,23,123,1,1,1]])

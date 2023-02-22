@@ -14,61 +14,102 @@ from sklearn.metrics import accuracy_score # Accuracy metrics
 import pickle 
 import cv2
 from gesture_tracker import gesture_tracker
+import noduro_code.read_settings as read_settings
+import noduro
+from sklearn.impute import SimpleImputer
+import modeling.gesture.pose_manipulation.pose_standardizer as pose_standardizer
+
 class realtime_gesture_analysis(gesture_tracker):
-    def get_pickle_files(self, base_dir):
-        everything = [os.path.join(dp, f) for dp, dn, fn in os.walk(base_dir) for f in fn]
-        self.lr_models = [pickle.load(open(i,"rb")) for i in everything if "_lr.pkl" in i]
-        self.rc_models = [pickle.load(open(i,"rb")) for i in everything if "_rc.pkl" in i]
-        self.rf_models = [pickle.load(open(i,"rb")) for i in everything if "_rf.pkl" in i]
-        self.gn_models = [pickle.load(open(i,"rb")) for i in everything if "_gb.pkl" in i]
-        self.models = [self.lr_models,self.rc_models,self.rf_models,self.gn_models]
+    def __init__(self):
+        super().__init__(eye = True, face = True, hand = True, pose = True, eye_confidence = 0.7, face_confidence= 0.7, hand_confidence = 0.7, pose_confidence = 0.7,number_of_hands = 2,  frameskip = True)
+        self.settings, _ = read_settings.get_settings()
+        self.default_folder = self.settings["filesystem"]["model_storage"] #in settings
+        self.default_folder = noduro.subdir_path(self.default_folder)
+        self.models = sorted(os.listdir(self.default_folder))
+        self.gpd = pose_standardizer.flatten_gesture_point_dict_to_list(self.gesture_point_dict)
+        newest_model_files = noduro.get_dir_files(noduro.join(self.default_folder,self.models[-1]))
+        self.newest_models = {
+            "lr" : [pickle.load(open(i,"rb")) for i in newest_model_files if "lr.pkl" in i][0],
+            "rc" : [pickle.load(open(i,"rb")) for i in newest_model_files if "rc.pkl" in i][0],
+            "rf" : [pickle.load(open(i,"rb")) for i in newest_model_files if "rf.pkl" in i][0],
+            "gb" : [pickle.load(open(i,"rb")) for i in newest_model_files if "gb.pkl" in i][0]
+        }
+
+    def fill_nans_with_imputer_for_sklearn_regression(self, list_3d : list) -> list:
+        #check if the class has a variable named self.imputer
+        if not hasattr(self, 'imputer'):
+            self.imputer = SimpleImputer(missing_values=np.nan, strategy='mean')
+        list_1d = [[x for v in list_3d for x in pose_standardizer.flatten_3d_to_1d(v)]]
+        return self.imputer.fit_transform(list_1d)
+    def points_converter(self,points : list) -> None: #built off of gesture_ingestion
+        points = self.fill_nans_with_imputer_for_sklearn_regression(points)
+        points = list(points)
+   
+        return points
     
-    
-    def live_read(self, capture_index : int = 0):
-        # save_results_file = list(os.path.splitext(save_vid_file)); results_csv = save_results_file[0] + ".csv"
-        # save_results_file[0] += "_results"; save_results_file = ''.join(save_results_file)#remove file extension and add results to the end
-        csv_data = self.realtime_analysis(capture_index = capture_index)
-    
-    
-    def existing_read(self, classification : str, video_file):
-        result_video_file = os.path.splitext(video_file); results_csv = result_video_file[0] + ".csv"
-        result_video_file[0] += "_results"; result_video_file = ''.join(result_video_file)#remove file extension and add results to the end
-        csv_data = self.video_analysis(video = video_file, 
-                                                        result_video = result_video_file,
-                                                        classification = classification)
-        self.write_csv(results_csv,csv_data, self.number_of_coordinates)
-    def frame_by_frame_check(self, frame, row, trys : bool = True):
-        X = pd.DataFrame([row])
-        for model in self.models[1::]:
-            model = model[0]
-            if trys:
-                body_language_class = model.predict(X)[0]
-                try:
-                    body_language_prob = model.predict_proba(X)[0]
-                    print(body_language_class, body_language_prob)
-                except:
-                    print(body_language_class)
-                try:
-                    cv2.putText(frame, 'CLASS', (95,12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-                    cv2.putText(frame, body_language_class.split(' ')[0], (90,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+    def realtime_analysis(self, capture_index : int = 0, save_vid_file  : str = None, save_results_vid_file : str = None, frame_skip = None):
+        if capture_index == None:
+            capture_index = self.camera_selector() #select camera
+        self.capture = cv2.VideoCapture(capture_index, cv2.CAP_DSHOW) #cap_show makes startup alot faster. Starts camera
+        first_frame = True  
+        landmarks = None
+        self.looping_analysis(videoCapture = self.capture, video_shape = None, fps = None, result_vid = save_results_vid_file, starting_vid = save_vid_file, frame_skip = frame_skip, save_pose = False, standardize_pose = True,save_frames = False)    
+
+
+    def while_processing(self, frame):
+        stand, distance = pose_standardizer.center_and_scale_from_raw(pose_standardizer.convert_holistic_to_dict(self.processed_frame["holistic"]), self.gesture_point_dict,self.moving_average)
+        row = self.points_converter(stand)
+        for name, model in self.newest_models.items():
+            body_language_class = model.predict(row)[0]
+            body_language_prob = model.predict_proba(row)[0]
+            print(body_language_class, body_language_prob)
+            cv2.putText(frame, 'CLASS', (95,12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+            cv2.putText(frame, body_language_class.split(' ')[0], (90,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+            
+            # Display Probability
+            cv2.putText(frame, 'PROB', (15,12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+            cv2.putText(frame, str(round(body_language_prob[np.argmax(body_language_prob)],2)), (10,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+            return frame
+    # def existing_read(self, classification : str, video_file):
+    #     result_video_file = os.path.splitext(video_file); results_csv = result_video_file[0] + ".csv"
+    #     result_video_file[0] += "_results"; result_video_file = ''.join(result_video_file)#remove file extension and add results to the end
+    #     csv_data = self.video_analysis(video = video_file, 
+    #                                                     result_video = result_video_file,
+    #                                                     classification = classification)
+    #     self.write_csv(results_csv,csv_data, self.number_of_coordinates)
+    # def frame_by_frame_check(self, frame, row, trys : bool = True):
+    #     X = pd.DataFrame([row])
+    #     for model in self.models[1::]:
+    #         model = model[0]
+    #         if trys:
+    #             body_language_class = model.predict(X)[0]
+    #             try:
+    #                 body_language_prob = model.predict_proba(X)[0]
+    #                 print(body_language_class, body_language_prob)
+    #             except:
+    #                 print(body_language_class)
+    #             try:
+    #                 cv2.putText(frame, 'CLASS', (95,12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+    #                 cv2.putText(frame, body_language_class.split(' ')[0], (90,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
                     
-                    # Display Probability
-                    cv2.putText(frame, 'PROB', (15,12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-                    cv2.putText(frame, str(round(body_language_prob[np.argmax(body_language_prob)],2)), (10,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
-                    return frame
-                except:
-                    pass
-            else:
-                body_language_class = model.predict(X)[0]
-                body_language_prob = model.predict_proba(X)[0]
-                print(body_language_class, body_language_prob)
-                cv2.putText(frame, 'CLASS', (95,12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-                cv2.putText(frame, body_language_class.split(' ')[0], (90,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+    #                 # Display Probability
+    #                 cv2.putText(frame, 'PROB', (15,12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+    #                 cv2.putText(frame, str(round(body_language_prob[np.argmax(body_language_prob)],2)), (10,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+    #                 return frame
+    #             except:
+    #                 pass
+    #         else:
+    #             body_language_class = model.predict(X)[0]
+    #             body_language_prob = model.predict_proba(X)[0]
+    #             print(body_language_class, body_language_prob)
+    #             cv2.putText(frame, 'CLASS', (95,12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+    #             cv2.putText(frame, body_language_class.split(' ')[0], (90,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
                 
-                # Display Probability
-                cv2.putText(frame, 'PROB', (15,12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-                cv2.putText(frame, str(round(body_language_prob[np.argmax(body_language_prob)],2)), (10,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
-                return model
+    #             # Display Probability
+    #             cv2.putText(frame, 'PROB', (15,12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+    #             cv2.putText(frame, str(round(body_language_prob[np.argmax(body_language_prob)],2)), (10,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+    #             return model
 a = realtime_gesture_analysis()
-a.get_pickle_files("C:/Users/aadvi/Desktop/Tester")
-a.live_read()
+# a.get_pickle_files("C:/Users/aadvi/Desktop/Tester")
+# a.live_read()
+a.realtime_analysis()

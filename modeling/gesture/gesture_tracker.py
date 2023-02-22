@@ -354,19 +354,21 @@ class gesture_tracker:
         self.get_timer()
         track["per frame to timer"] = time.time() - track["start"]; track["start"] = time.time()
         self.process_frame = frame #frame post processing(could have drawing points in it as well)
-        self.while_processing(self.process_frame) #filler for any subclasses
+        _ = self.while_processing(self.process_frame) #filler for any subclasses
+        if _ is not None:
+           frame = _
         track["timer to end of per frame"] = time.time() - track["start"]; track["start"] = time.time()
         return frame
 
     def frame_by_frame_check(self, frame,landmarks, bool):
         return frame
     
-    def looping_analysis(self, videoCapture : object, video_shape = None, fps = None,  result_vid : str = None, starting_vid: str = None, frame_skip : int = None, save_pose : bool = False, standardize_pose : bool = False):
+    def looping_analysis(self, videoCapture : object, video_shape = None, fps = None,  result_vid : str = None, starting_vid: str = None, frame_skip : int = None, save_pose : bool = False, standardize_pose : bool = False, save_frames = False):
         self.processed_frame = {}
         self.visibilty_dict = {}
         
         if fps is None:
-            fps = videoCapture.get(cv2.CAP_PROP_FPS)
+            fps = 30
         _, frame = videoCapture.read()
 
         #frame_skip
@@ -408,17 +410,18 @@ class gesture_tracker:
             if starting_vid: #write frame to the file
                 curr.write(frame)
             
-            if self.etc["frame_skip"] != 0 and self.etc["frame_index"] % self.etc["frame_skip"] == 0 : #if you want to skip frames
+            if frame_skip != 0 and self.etc["frame_index"] % self.etc["frame_skip"] == 0 : #if you want to skip frames
                 frame = self.per_frame_analysis(frame, True) #run frame analysis
                 if save_pose or standardize_pose:
                     gesture_dic = standardize.convert_holistic_to_dict(self.processed_frame["holistic"])
 
-                if save_pose:
+                if save_pose and save_frames:
                     self.save_pose.append(standardize.filter_body_parts(gesture_dic, self.gesture_point_dict))
+                elif save_pose:
+                    self.save_pose = standardize.filter_body_parts(gesture_dic, self.gesture_point_dict)
                 # closer_or_farther = check_distance.closer_or_farther(_)
                 # print(closer_or_farther)
                 if standardize_pose:
-                    self.moving_average
                     stand, distance = standardize.center_and_scale_from_raw(gesture_dic, self.gesture_point_dict,self.moving_average)
                     #if the array isn't long enough, force add
                     if len(self.moving_average) < self.etc["moving_average_length"]:
@@ -426,7 +429,10 @@ class gesture_tracker:
                     else:
                         self.moving_average.append(distance)
                         del self.moving_average[0]
-                    self.save_calibrated_pose.append(stand)
+                    if save_frames:
+                        self.save_calibrated_pose.append(stand)
+                    else:
+                        self.save_calibrated_pose = stand
             if self.tracking_or_not["hand"] and self.tracking_or_not["pose"] and self.tracking_or_not["face"]:
                 frame = self.draw_holistic(frame, self.processed_frame["holistic"])
             
@@ -459,7 +465,7 @@ class gesture_tracker:
         self.capture = cv2.VideoCapture(capture_index, cv2.CAP_DSHOW) #cap_show makes startup alot faster. Starts camera
         first_frame = True  
         landmarks = None
-        self.looping_analysis(self.capture, save_results_vid_file, save_vid_file, frame_skip,save_pose = analyze, standardize_pose = analyze)    
+        self.looping_analysis(videoCapture = self.capture, video_shape = None, fps = None, result_vid = save_results_vid_file, starting_vid = save_vid_file, frame_skip = frame_skip, save_pose = analyze, standardize_pose = analyze, save_frames = analyze)    
     
     def video_dimensions_fps(self,videofile):
         vid = cv2.VideoCapture(videofile) #vid capture object
@@ -470,7 +476,7 @@ class gesture_tracker:
         vid.release()
         return int(width),int(height),fps
     
-    def video_analysis(self, video = None, result_video = None, frameskip = 1, standardize_pose = True):
+    def video_analysis(self, video = None, result_video = None, frame_skip = 1, standardize_pose = True):
         if not video:
             video,result_video, = self.file_finder() #get file if not provided
         self.capture = cv2.VideoCapture(video)
@@ -505,6 +511,6 @@ class gesture_tracker:
 
 if __name__ == '__main__':
     a = gesture_tracker(frameskip = True)
-    a.realtime_analysis() #("C:/Users/aadvi/Desktop/Movie on 2-8-23 at 9.43 AM.mov")
+    a.realtime_analysis(save_vid_file="C:/Users/aadvi/Desktop/Autism/Autism-Adaptive-Video-Prompting/data/raw/gestures/happy/2023-02-21-18-09-10/capture.mp4") #("C:/Users/aadvi/Desktop/Movie on 2-8-23 at 9.43 AM.mov")
 #     a.video_analysis("C:/Users/aadvi/Desktop/Autism/Autism-Adaptive-Video-Prompting/data/raw/gestures/cutting/2023-02-18-10-14-06/test1.mp4")
 # print(np.mean(a.timer,axis = 1))
