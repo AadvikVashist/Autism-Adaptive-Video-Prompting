@@ -19,7 +19,6 @@ from  fuzzywuzzy import fuzz as fz
 import shutil
 import time
 # initialize mediapipe
-from sklearn.impute import SimpleImputer
 import modeling.gesture.pose_manipulation.pose_standardizer as pose_standardizer
 import noduro_code.read_settings as read_settings
 class gesture_data_ingestion(gesture_tracker):
@@ -59,12 +58,6 @@ class gesture_data_ingestion(gesture_tracker):
                     return noduro.join(self.default_folder,string)
         return None
     
-    def fill_nans_with_imputer_for_sklearn_regression(self, list_2d : list) -> list:
-        #check if the class has a variable named self.imputer
-        if not hasattr(self, 'imputer'):
-            self.imputer = SimpleImputer(missing_values=np.nan, strategy='mean')
-        list_1d = [pose_standardizer.flatten_3d_to_1d(d) for d in list_2d]
-        return self.imputer.fit_transform(list_1d)
     
     def save_points_as_csv(self, file : str, points : list) -> None:
         val = 0
@@ -125,8 +118,8 @@ class gesture_data_ingestion(gesture_tracker):
     def convert_video_to_csv_files(self, file : str, result_file_names : list) -> None:   
         self.video_analysis(video = file,result_video = None,frame_skip = 1, standardize_pose = True) #analyze the video and get a list of the results
         #fill nanes with imputer for self.save_pose and self.save_calibrated_pose
-        self.save_pose = self.fill_nans_with_imputer_for_sklearn_regression(self.save_pose)
-        self.save_calibrated_pose = self.fill_nans_with_imputer_for_sklearn_regression(self.save_calibrated_pose)
+        self.save_pose = pose_standardizer.fill_nans_with_imputer_for_sklearn_regression(self.save_pose)
+        self.save_calibrated_pose = pose_standardizer.fill_nans_with_imputer_for_sklearn_regression(self.save_calibrated_pose)
         self.save_points_as_csv(result_file_names[0],self.save_pose) # write raw results
         self.save_points_as_csv(result_file_names[1],self.save_calibrated_pose)#write actual results
     

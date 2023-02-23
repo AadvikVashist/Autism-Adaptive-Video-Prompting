@@ -1,14 +1,14 @@
 #size = 1/distance.
-from typing import Union
 import numpy as np
 import matplotlib.pyplot as plt
 import noduro
 import time
 from csv import writer
-import pandas as pd
 import noduro_code.read_settings as read_settings
 import noduro
-import os
+from sklearn.impute import SimpleImputer
+#import pose_standardizer
+
 try:
     SCALE = read_settings.get_scale_factor()
 except:
@@ -107,3 +107,21 @@ def flatten_gesture_point_dict_to_list(gpdict):
 def flatten_3d_to_1d(points : list):
     return np.array([x for v in points for x in v]).flatten()
 # def standardize_pose(points):
+
+IMPUTER = SimpleImputer(missing_values=np.nan, strategy='mean')
+def fill_nans_with_imputer_for_sklearn_regression(list_3d : list,multiple_frames : bool = True) -> list:
+        #check if the class has a variable named self.imputer
+        if not multiple_frames:
+            list_1d = [[x for v in list_3d for x in flatten_3d_to_1d(v)]]
+        else:
+            list_1d = [flatten_3d_to_1d(d) for d in list_3d]
+        return IMPUTER.fit_transform(list_1d)
+
+def convert_processed_frame_to_filtered_parts(processed_frame : dict,gpdict) -> dict:
+    gesture_dic = convert_holistic_to_dict(processed_frame["holistic"])
+    filter_body_parts(gesture_dic, gpdict)
+def convert_processed_frame_to_standardized_parts(processed_frame : dict,gpdict, moving_average) -> dict:
+    gesture_dic = convert_holistic_to_dict(processed_frame["holistic"])
+    filter_body_parts(gesture_dic, gpdict)
+    stand, distance = center_and_scale_from_raw(gesture_dic, gpdict,moving_average)
+    return stand, distance

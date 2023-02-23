@@ -169,7 +169,7 @@ class gesture_tracker:
         x_px = min(math.floor(normalized_x * image_width), image_width - 1)
         y_px = min(math.floor(normalized_y * image_height), image_height - 1)
         return int(x_px),int(y_px), 
-      
+
     def draw_face_proprietary(self,frame, landmark_list, individual_show = False): #draw face using gesture points from .json 
         framed = None
         if landmark_list is None and len(self.landmark_px["face"]) != 0: #if there has been a previous comparison point set, and less than a second has passed since that time. No landmarks found
@@ -356,7 +356,7 @@ class gesture_tracker:
         self.process_frame = frame #frame post processing(could have drawing points in it as well)
         _ = self.while_processing(self.process_frame) #filler for any subclasses
         if _ is not None:
-           frame = _
+            frame = _
         track["timer to end of per frame"] = time.time() - track["start"]; track["start"] = time.time()
         return frame
 
@@ -412,9 +412,9 @@ class gesture_tracker:
             
             if frame_skip != 0 and self.etc["frame_index"] % self.etc["frame_skip"] == 0 : #if you want to skip frames
                 frame = self.per_frame_analysis(frame, True) #run frame analysis
+                
                 if save_pose or standardize_pose:
                     gesture_dic = standardize.convert_holistic_to_dict(self.processed_frame["holistic"])
-
                 if save_pose and save_frames:
                     self.save_pose.append(standardize.filter_body_parts(gesture_dic, self.gesture_point_dict))
                 elif save_pose:
@@ -433,12 +433,14 @@ class gesture_tracker:
                         self.save_calibrated_pose.append(stand)
                     else:
                         self.save_calibrated_pose = stand
+            
             if self.tracking_or_not["hand"] and self.tracking_or_not["pose"] and self.tracking_or_not["face"]:
                 frame = self.draw_holistic(frame, self.processed_frame["holistic"])
             
             if "fps" in self.etc:
                 cv2.putText(frame, "FPS: " + str(self.etc["fps"]), (10,15), cv2.FONT_HERSHEY_PLAIN, fontScale = 1, thickness= 2, color = (0,0,0))
-
+            if "gesture" in self.etc:
+                cv2.putText(frame, self.etc["gesture"][0] + ", " + self.etc["gesture"][1], (90,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
             if result_vid: #write the results
                 result.write(frame)
             
