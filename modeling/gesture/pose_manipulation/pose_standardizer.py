@@ -17,6 +17,8 @@ except:
 DEFAULT_FILE,_ = read_settings.get_settings()
 DEFAULT_FILE = DEFAULT_FILE["filesystem"]["pose_standardization"] #in settings
 DICT = noduro.read_json(DEFAULT_FILE, True)
+IMPUTER1 = SimpleImputer(missing_values=np.nan,  strategy='median')
+IMPUTER2 = SimpleImputer(missing_values=np.nan,  strategy='constant', fill_value = 0.5)
 def convert_holistic_to_dict(holistic_values):
     return {"face" : holistic_values.face_landmarks, "pose" : holistic_values.pose_landmarks, "left_hand" : holistic_values.left_hand_landmarks, "right_hand" : holistic_values.right_hand_landmarks}
 
@@ -80,7 +82,10 @@ def calibrate_pose_using_eye_and_chest(points): #use the eye for scaling, and th
     chest = DICT["center"]["pose"]["chest"]; center = np.mean([(points["pose"].landmark[c].x,points["pose"].landmark[c].y,points["pose"].landmark[c].z) for c in chest],axis = 0)
     return dist/SCALE,center #return ratio between size of current image and SCALE value. 
 def center_and_scale_from_raw(points, gpdict, moving_average = None): #derived point values and the gesture point dictionary
-    curr_scale,center = calibrate_pose_using_eye_and_chest(points)
+    if "face" in points.keys() and "pose" in points.keys():
+        curr_scale,center = calibrate_pose_using_eye_and_chest(points)
+    else:
+        print("no face and/or pose")
     if moving_average is not None:
         set_scale = np.mean((curr_scale,np.mean(moving_average)))
     else:
@@ -108,14 +113,14 @@ def flatten_3d_to_1d(points : list):
     return np.array([x for v in points for x in v]).flatten()
 # def standardize_pose(points):
 
-IMPUTER = SimpleImputer(missing_values=np.nan, strategy='mean')
 def fill_nans_with_imputer_for_sklearn_regression(list_3d : list,multiple_frames : bool = True) -> list:
         #check if the class has a variable named self.imputer
-        if not multiple_frames:
-            list_1d = [[x for v in list_3d for x in flatten_3d_to_1d(v)]]
-        else:
-            list_1d = [flatten_3d_to_1d(d) for d in list_3d]
-        return IMPUTER.fit_transform(list_1d)
+    if not multiple_frames:
+        list_1d = [[x for v in list_3d for x in flatten_3d_to_1d(v)]]
+        return IMPUTER2.fit_transform(list_1d)
+    else:
+        list_1d = [flatten_3d_to_1d(d) for d in list_3d]
+        return IMPUTER1.fit_transform(list_1d)
 
 def convert_processed_frame_to_filtered_parts(processed_frame : dict,gpdict) -> dict:
     gesture_dic = convert_holistic_to_dict(processed_frame["holistic"])

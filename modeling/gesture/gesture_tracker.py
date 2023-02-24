@@ -440,7 +440,7 @@ class gesture_tracker:
             if "fps" in self.etc:
                 cv2.putText(frame, "FPS: " + str(self.etc["fps"]), (10,15), cv2.FONT_HERSHEY_PLAIN, fontScale = 1, thickness= 2, color = (0,0,0))
             if "gesture" in self.etc:
-                cv2.putText(frame, self.etc["gesture"][0] + ", " + self.etc["gesture"][1], (90,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+                cv2.putText(frame, str(self.etc["gesture"][0]) + ", " + str(self.etc["gesture"][1]), (90,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
             if result_vid: #write the results
                 result.write(frame)
             
