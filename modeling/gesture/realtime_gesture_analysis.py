@@ -18,20 +18,32 @@ import noduro_code.read_settings as read_settings
 import noduro
 from sklearn.impute import SimpleImputer
 import modeling.gesture.pose_manipulation.pose_standardizer as pose_standardizer
+
+"""the realtime_gesture_analysis class is a subclass of gesture tracker.
+The class uses the noduro gesture models trainined in gesture_ingestion to analyze gestures. 
+The class can take any of the four existing models, at any point in their trained time, and can apply analysis based on the frame_skip value. 
+The frameskip value can be trained using frame_skip.py in the noduro_code folder."""
 class realtime_gesture_analysis(gesture_tracker):
-    def __init__(self):
+    def __init__(self,use_newest : str = None):
         super().__init__(eye = True, face = True, hand = True, pose = True, eye_confidence = 0.7, face_confidence= 0.7, hand_confidence = 0.7, pose_confidence = 0.7,number_of_hands = 2,  frameskip = True)
         self.settings, _ = read_settings.get_settings()
         self.default_folder = self.settings["filesystem"]["model_storage"] #in settings
         self.default_folder = noduro.subdir_path(self.default_folder)
         self.models = sorted(os.listdir(self.default_folder))
         self.gpd = pose_standardizer.flatten_gesture_point_dict_to_list(self.gesture_point_dict)
-        newest_model_files = noduro.get_dir_files(noduro.join(self.default_folder,self.models[-1]))
-        self.newest_models = {
-            "lr" : [pickle.load(open(i,"rb")) for i in newest_model_files if "lr.pkl" in i][0],
-            "rc" : [pickle.load(open(i,"rb")) for i in newest_model_files if "rc.pkl" in i][0],
-            "rf" : [pickle.load(open(i,"rb")) for i in newest_model_files if "rf.pkl" in i][0],
-            "gb" : [pickle.load(open(i,"rb")) for i in newest_model_files if "gb.pkl" in i][0]
+        if use_newest is None:
+            selected_model = noduro.get_dir_files(noduro.join(self.default_folder,self.models[-1]))
+        else:
+            try:
+                ind = self.models.index(use_newest)
+                selected_model = noduro.get_dir_files(noduro.join(self.default_folder,self.models[ind]))
+            except:
+                raise ValueError("folder not found in the models. Please try again.")
+        self.selected_model = {
+            "lr" : [pickle.load(open(i,"rb")) for i in selected_model if "lr.pkl" in i][0],
+            "rc" : [pickle.load(open(i,"rb")) for i in selected_model if "rc.pkl" in i][0],
+            "rf" : [pickle.load(open(i,"rb")) for i in selected_model if "rf.pkl" in i][0],
+            "gb" : [pickle.load(open(i,"rb")) for i in selected_model if "gb.pkl" in i][0]
         }
 
 
@@ -49,7 +61,7 @@ class realtime_gesture_analysis(gesture_tracker):
         row = pose_standardizer.fill_nans_with_imputer_for_sklearn_regression(stand, False)
         gest = None
         proba = None
-        for name, model in self.newest_models.items():
+        for name, model in self.selected_model.items():
             body_language_class = model.predict(row)[0]
             try:
                 body_language_prob = model.predict_proba(row)[0]
@@ -67,46 +79,5 @@ class realtime_gesture_analysis(gesture_tracker):
             #     gest[g[0]][1] += g[1]
         self.etc["gesture"] = [gest[np.argmax(proba)],np.max(proba)]  # gest[list(gest.keys())[np.argmax(np.array(list(gest.values()))[:,1] )]]
         return frame
-    # def existing_read(self, classification : str, video_file):
-    #     result_video_file = os.path.splitext(video_file); results_csv = result_video_file[0] + ".csv"
-    #     result_video_file[0] += "_results"; result_video_file = ''.join(result_video_file)#remove file extension and add results to the end
-    #     csv_data = self.video_analysis(video = video_file, 
-    #                                                     result_video = result_video_file,
-    #                                                     classification = classification)
-    #     self.write_csv(results_csv,csv_data, self.number_of_coordinates)
-    # def frame_by_frame_check(self, frame, row, trys : bool = True):
-    #     X = pd.DataFrame([row])
-    #     for model in self.models[1::]:
-    #         model = model[0]
-    #         if trys:
-    #             body_language_class = model.predict(X)[0]
-    #             try:
-    #                 body_language_prob = model.predict_proba(X)[0]
-    #                 print(body_language_class, body_language_prob)
-    #             except:
-    #                 print(body_language_class)
-    #             try:
-    #                 cv2.putText(frame, 'CLASS', (95,12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-    #                 cv2.putText(frame, body_language_class.split(' ')[0], (90,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
-                    
-    #                 # Display Probability
-    #                 cv2.putText(frame, 'PROB', (15,12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-    #                 cv2.putText(frame, str(round(body_language_prob[np.argmax(body_language_prob)],2)), (10,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
-    #                 return frame
-    #             except:
-    #                 pass
-    #         else:
-    #             body_language_class = model.predict(X)[0]
-    #             body_language_prob = model.predict_proba(X)[0]
-    #             print(body_language_class, body_language_prob)
-    #             cv2.putText(frame, 'CLASS', (95,12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-    #             cv2.putText(frame, body_language_class.split(' ')[0], (90,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
-                
-    #             # Display Probability
-    #             cv2.putText(frame, 'PROB', (15,12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-    #             cv2.putText(frame, str(round(body_language_prob[np.argmax(body_language_prob)],2)), (10,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
-    #             return model
 a = realtime_gesture_analysis()
-# a.get_pickle_files("C:/Users/aadvi/Desktop/Tester")
-# a.live_read()
 a.realtime_analysis()

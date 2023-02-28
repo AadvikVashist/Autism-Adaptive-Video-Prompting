@@ -115,11 +115,16 @@ class gesture_data_ingestion(gesture_tracker):
         if existing_files is not None:
             self.train_gesture_using_folder_videos_recurse(cwd)
 
-    def convert_video_to_csv_files(self, file : str, result_file_names : list) -> None:   
+    def convert_video_to_csv_files(self, file : str, result_file_names : list, remove_frames : int = 50) -> None:   
         self.video_analysis(video = file,result_video = None,frame_skip = 1, standardize_pose = True) #analyze the video and get a list of the results
         #fill nanes with imputer for self.save_pose and self.save_calibrated_pose
-        self.save_pose = pose_standardizer.fill_nans_with_imputer_for_sklearn_regression(self.save_pose)
-        self.save_calibrated_pose = pose_standardizer.fill_nans_with_imputer_for_sklearn_regression(self.save_calibrated_pose)
+        try:
+            self.save_pose = pose_standardizer.fill_nans_with_imputer_for_sklearn_regression(self.save_pose)[0:-1*remove_frames]
+            self.save_calibrated_pose = pose_standardizer.fill_nans_with_imputer_for_sklearn_regression(self.save_calibrated_pose)[0:-1*remove_frames]
+        except:
+            print("not enough frames to filter the end, so all frames will be used")
+            self.save_pose = pose_standardizer.fill_nans_with_imputer_for_sklearn_regression(self.save_pose)
+            self.save_calibrated_pose = pose_standardizer.fill_nans_with_imputer_for_sklearn_regression(self.save_calibrated_pose)
         self.save_points_as_csv(result_file_names[0],self.save_pose) # write raw results
         self.save_points_as_csv(result_file_names[1],self.save_calibrated_pose)#write actual results
     
@@ -130,26 +135,6 @@ class gesture_data_ingestion(gesture_tracker):
             results = [f + "_results.csv",f + "_standardized_results.csv"]
             if ext in [".mp4", ".m4a"] and results[0] not in folder_files and results[1] not in folder_files:
                 self.convert_video_to_csv_files(self, file,results)
-    # def make_training_set(self, master_model : bool = False):
-    #     folder_name = noduro.folder_selector()
-    #     results = []
-        
-    #     while True:
-    #         file_name = noduro.join(folder_name,  "capture_") + time + ".mp4"
-    #         results_file_name = os.path.join(folder_name,  "capture_") + time + ".csv"
-    #         classification = input("what do you want to call this classifier: ")
-    #         classification = classification.lower().strip()
-    #         results_csv_file,csv_data = self.train_using_camera(classification, file_name,0)
-    #         results.extend(csv_data)
-    #         check = input("would you like to make another classifier?")
-    #         if "y" in check.lower():
-    #             time = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    #             continue
-    #         else:
-    #             break
-    #     self.write_csv(results_file_name,results, self.gesture_model.number_of_coordinates)
-    #     self.model_pipeline(results_file_name, os.path.join(folder_name, "results"),master_model)
-
     def train_multiple_videos_of_same_gesture_using_camera(self,save_vid_folder : str, capture_index : int = 0, certain : bool = False):
         index = 0
         while True:
