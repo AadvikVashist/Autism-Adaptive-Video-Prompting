@@ -16,6 +16,12 @@ import noduro_code.read_settings as read_settings
 import modeling.gesture.pose_manipulation.pose_standardizer as standardize
 import matplotlib.pyplot as plt
 import modeling.gesture.check_distance as check_distance
+"""a base class that takes videos, as either a video file or through a capture. 
+Base gestures are derived from mediapipe's Holistic, Hand, Pose, and Face Mesh modules. 
+The gesture class doesn't need to use holistic, but it is strongle recommended.
+The class takes a frameskip feature, that skips analysis to maximize frame per second whilst maintaining gesture analysis.
+By default, propeitary points are tracked as opposed to all of them, with selected values being chosen to maximize runtime viability whilst maninting accuracy.
+The start, stop, and while procesing functions all serve as placeholders for subclasses to allow for added functionality within the gesture tracking base, as it is a closed loop process without such options"""
 global track
 track = {}
 class gesture_tracker:
