@@ -44,29 +44,30 @@ class realtime_gesture_analysis(gesture_tracker):
         self.looping_analysis(videoCapture = self.capture, video_shape = None, fps = None, result_vid = save_results_vid_file, starting_vid = save_vid_file, frame_skip = frame_skip, save_pose = False, standardize_pose = True,save_frames = False)    
 
     
-    def while_processing(self, frame):
-        stand, distance = pose_standardizer.center_and_scale_from_raw(pose_standardizer.convert_holistic_to_dict(self.processed_frame["holistic"]), self.gesture_point_dict,self.moving_average)
-        row = pose_standardizer.fill_nans_with_imputer_for_sklearn_regression(stand, False)
-        gest = None
-        proba = None
-        for name, model in self.newest_models.items():
-            body_language_class = model.predict(row)[0]
-            try:
-                body_language_prob = model.predict_proba(row)[0]
-                if proba is None:
-                    proba = body_language_prob
-                    gest = list(np.zeros(proba.shape))
-                else:
-                    proba += body_language_prob
-                gest[np.argmax(proba)] = body_language_class
-            except:
-                pass
-            # if g[0] not in gest:
-            #     gest[g[0]] = g
-            # else:
-            #     gest[g[0]][1] += g[1]
-        self.etc["gesture"] = [gest[np.argmax(proba)],np.max(proba)]  # gest[list(gest.keys())[np.argmax(np.array(list(gest.values()))[:,1] )]]
-        return frame
+    def while_processing(self, frame,process):
+        if process:
+            stand, distance = pose_standardizer.center_and_scale_from_raw(pose_standardizer.convert_holistic_to_dict(self.processed_frame["holistic"]), self.gesture_point_dict,self.moving_average)
+            row = pose_standardizer.fill_nans_with_imputer_for_sklearn_regression(stand, False)
+            gest = None
+            proba = None
+            for name, model in self.newest_models.items():
+                body_language_class = model.predict(row)[0]
+                try:
+                    body_language_prob = model.predict_proba(row)[0]
+                    if proba is None:
+                        proba = body_language_prob
+                        gest = list(np.zeros(proba.shape))
+                    else:
+                        proba += body_language_prob
+                    gest[np.argmax(proba)] = body_language_class
+                except:
+                    pass
+                # if g[0] not in gest:
+                #     gest[g[0]] = g
+                # else:
+                #     gest[g[0]][1] += g[1]
+            self.etc["gesture"] = [gest[np.argmax(proba)],np.max(proba)]  # gest[list(gest.keys())[np.argmax(np.array(list(gest.values()))[:,1] )]]
+            return frame
     # def existing_read(self, classification : str, video_file):
     #     result_video_file = os.path.splitext(video_file); results_csv = result_video_file[0] + ".csv"
     #     result_video_file[0] += "_results"; result_video_file = ''.join(result_video_file)#remove file extension and add results to the end

@@ -6,6 +6,8 @@ import tkinter as tk
 import numpy as np
 import csv
 import pandas as pd
+from screeninfo import get_monitors
+import cv2
 def get_root():
     return os.path.dirname(__file__.replace("\\","/"))
 def subdir_path(*args):
@@ -158,6 +160,37 @@ def make_dir_if_not_exist(file : str, relative_path = False):
     except FileExistsError:
         print("directory", file, "already exists")
         pass
+def scale_image_to_window(image,window_width = None, window_height = None):
+    image_aspect = image.shape[1] / image.shape[0]
+    if window_width or window_height is None:
+        a = get_monitors()[0]
+        window_width = a.width
+        window_height = a.height
+
+    window_aspect = window_width / window_height
+    if window_aspect > image_aspect: #width of window is greater than image width
+        # scaled_width = window_width
+        # scaled_height = int(window_width / image_aspect)
+        new_height = image.shape[0] / 2 * int(window_height/image.shape[0]*2)
+        new_width= new_height/image.shape[0]*image.shape[1]
+        new_image = cv2.resize(image,np.int32([new_width,new_height]))
+    else:
+        # scaled_width = window_width
+        # scaled_height = int(window_width / image_aspect)
+        new_width = image.shape[1] / 2 * int(window_width/image.shape[1]*2)
+        new_height= new_width/image.shape[1]*image.shape[0]
+        new_image = cv2.resize(image,np.int32([new_width,new_height]))
+    return new_image, window_width, window_height
+
+def get_maximum_resolution(video_capture : object):
+    MAX = 100000
+    video_capture.set(cv2.CAP_PROP_FRAME_WIDTH, MAX)
+    video_capture.set(cv2.CAP_PROP_FRAME_HEIGHT, MAX)
+    width = int(video_capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(video_capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    video_capture.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    video_capture.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    return video_capture, width, height
 if __name__ == '__main__':
     print("testing get_root:", get_root())
     print("testing subdir_path with desktop\\air\\hi/hi/wasd/how.py:", subdir_path("desktop\\air\\hi/hi/wasd/how.py"))

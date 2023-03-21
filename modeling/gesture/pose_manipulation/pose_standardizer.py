@@ -48,9 +48,9 @@ def filter_body_parts(landmarks : dict, ref : dict):
 def convert_holistic_to_parts(landmarks,ref_dict):
     return filter_body_parts(convert_holistic_to_dict(landmarks), ref_dict)
 
-def display_pose_direct(points,gesture_point_dict):
+def display_pose_direct(points):
     fig = plt.figure()
-    points = convert_holistic_to_parts(points, gesture_point_dict)
+    # points = convert_holistic_to_parts(points, gesture_point_dict)
     ax = plt.axes(projection='3d')
     for point in points:
         point = np.array(point)
@@ -99,7 +99,6 @@ def center_and_scale_from_raw(points, gpdict, moving_average = None): #derived p
         else:
             value = [((points[key].landmark[val].x,points[key].landmark[val].y,points[key].landmark[val].z)-center)/curr_scale for val in value]
         ret.append(value)
-    print(set_scale-curr_scale)
     return ret,curr_scale
 
 def flatten_gesture_point_dict_to_list(gpdict):

@@ -13,11 +13,13 @@ import modeling.gesture.pose_manipulation.pose_standardizer as pose_standardizer
 class calibrate_pose(gesture_tracker):
     def start(self):
         self.calibrated_values = []
-    def while_processing(self, frame):
-        try:
-            self.calibrated_values.append(pose_standardizer.calibrate_pose_using_eye(pose_standardizer.convert_holistic_to_dict(self.processed_frame["holistic"]), self.gesture_point_dict))
-        except:
-            pass
+    def while_processing(self, frame, process):
+        if process:
+            try:
+                self.calibrated_values.append(pose_standardizer.calibrate_pose_using_eye(pose_standardizer.convert_holistic_to_dict(self.processed_frame["holistic"]), self.gesture_point_dict))
+            except:
+                pass
+            return frame
     def end(self):
         der = pose_standardizer.derive_calibration(self.calibrated_values)
         write_results(self.video_file,(der,self.calibrated_values))

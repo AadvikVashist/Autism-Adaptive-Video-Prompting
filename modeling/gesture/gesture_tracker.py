@@ -24,6 +24,7 @@ class gesture_tracker:
                 hand_confidence : float = 0.7, pose_confidence : float  = 0.7,
                 number_of_hands : int = 2, frameskip = False):
         track["start"] = time.time()
+        self.draw = True
         self.landmark_px = { 
                             "face" : {},
                             "left_hand" : {},
@@ -83,7 +84,6 @@ class gesture_tracker:
             self.etc["colormap"]["cmap_spacing"] = 1/(len(self.gesture_point_dict["face"].keys())-1)*0.8
             self.model_and_solution["holistic_solution"] = mp.solutions.holistic
             self.model_and_solution["holistic_model"] = self.model_and_solution["holistic_solution"].Holistic(static_image_mode=False,model_complexity=1,
-                                                                    enable_segmentation =False,
                                                                     refine_face_landmarks=True,
                                                                     min_tracking_confidence=max(self.tracking_or_not["hand_confidence"],self.tracking_or_not["face_confidence"], self.tracking_or_not["pose_confidence"]),
                                                                     min_detection_confidence=max(self.tracking_or_not["hand_confidence"],self.tracking_or_not["face_confidence"], self.tracking_or_not["pose_confidence"]))
@@ -170,13 +170,14 @@ class gesture_tracker:
         y_px = min(math.floor(normalized_y * image_height), image_height - 1)
         return int(x_px),int(y_px), 
 
-    def draw_face_proprietary(self,frame, landmark_list, individual_show = False): #draw face using gesture points from .json 
+    def draw_face_proprietary(self,frame, landmark_list, individual_show = False, scalar = 1): #draw face using gesture points from .json 
         framed = None
+        scaled = np.round( * 2 * self.etc["points_size"])
         if landmark_list is None and len(self.landmark_px["face"]) != 0: #if there has been a previous comparison point set, and less than a second has passed since that time. No landmarks found
             if not("previous_elapsed" in self.etc["timers"]["face"] and self.etc["timers"]["face"]["previous_elapsed"] > self.etc["max_wait_time"]):
                 for index, (key, value) in enumerate(self.landmark_px["face"].items()):
                     for val in value:
-                        cv2.circle(frame, [val[0], val[1]], 1, np.array(self.etc["colormap"]["cmap"](index*self.etc["colormap"]["cmap_spacing"]))*255, 1)
+                        cv2.circle(frame, [val[0], val[1]],0, np.array(self.etc["colormap"]["cmap"](index*self.etc["colormap"]["cmap_spacing"]))*255, self.etc["points_size"])
         
         elif landmark_list is not None: #if landmarks found
             image_rows, image_cols, _ = frame.shape
@@ -185,7 +186,7 @@ class gesture_tracker:
                 value = [self._normalized_to_pixel_coordinates(landmark_list.landmark[val].x,  landmark_list.landmark[val].y, image_cols, image_rows) for val in value]
                 self.landmark_px["face"][key] = value
                 for val in value:
-                    cv2.circle(frame, [val[0], val[1]], 1, np.array(self.etc["colormap"]["cmap"](index*self.etc["colormap"]["cmap_spacing"]))*255, 1)
+                    cv2.circle(frame, [val[0], val[1]], 0, np.array(self.etc["colormap"]["cmap"](index*self.etc["colormap"]["cmap_spacing"]))*255, scaled)
             
             lister = np.array(self.landmark_px["face"]["face_outline"])
             mins = np.min(lister, axis = 0)
@@ -197,13 +198,14 @@ class gesture_tracker:
             cv2.waitKey(0)
         return frame, framed
     
-    def draw_pose_proprietary(self, frame: np.array, pose_landmark_list, individual_show = False): #draw points for pose using .json file 
+    def draw_pose_proprietary(self, frame: np.array, pose_landmark_list, individual_show = False, scalar = 1): #draw points for pose using .json file 
         framed = None
+        scaled = np.round( * 2 * self.etc["points_size"])
         if pose_landmark_list == None and len(self.landmark_px["pose"]) != 0:  #if there has been a previous comparison point set, and less than a second has passed since that time. No landmarks found
             if not("previous_elapsed" in self.etc["timers"]["pose"] and self.etc["timers"]["pose"]["previous_elapsed"] > self.etc["max_wait_time"]):
                 for index, (key, value) in enumerate(self.landmark_px["pose"].items()):
                     for val in value:
-                        cv2.circle(frame, [val[0], val[1]], 2, np.array(self.etc["colormap"]["cmap"](index*self.etc["colormap"]["cmap_spacing"]))*255, 2)
+                        cv2.circle(frame, [val[0], val[1]],0, np.array(self.etc["colormap"]["cmap"](index*self.etc["colormap"]["cmap_spacing"]))*255, scaled)
         elif pose_landmark_list is not None: #if landmarks found
             
             image_rows, image_cols, _ = frame.shape
@@ -211,7 +213,7 @@ class gesture_tracker:
                 value = [self._normalized_to_pixel_coordinates(pose_landmark_list.landmark[val].x,  pose_landmark_list.landmark[val].y, image_cols, image_rows) for val in value]
                 self.landmark_px["pose"][key] = value
                 for val in value:
-                    cv2.circle(frame, [val[0], val[1]], 2, np.array(self.etc["colormap"]["cmap"](index*self.etc["colormap"]["cmap_spacing"]))*255, 2)
+                    cv2.circle(frame, [val[0], val[1]], 0, np.array(self.etc["colormap"]["cmap"](index*self.etc["colormap"]["cmap_spacing"]))*255, scaled)
             
             lister = np.array(points.flatten(self.landmark_px["pose"]))
             mins = np.min(lister, axis = 0)
@@ -222,20 +224,21 @@ class gesture_tracker:
             cv2.waitKey(0)
         return frame, framed
     
-    def draw_hands_proprietary(self, frame: np.array, left_hand_landmarks, right_hand_landmarks, individual_show = False): #draws each hand seperately, as one may be tracked while the other isn't. Uses .json file
+    def draw_hands_proprietary(self, frame: np.array, left_hand_landmarks, right_hand_landmarks, individual_show = False, scalar = 1): #draws each hand seperately, as one may be tracked while the other isn't. Uses .json file
         frame_left = None; frame_right = None
+        scaled = np.round( * 2 * self.etc["points_size"])
         if left_hand_landmarks == None and len(self.landmark_px["left_hand"]) != 0:  #if there has been a previous comparison point set, and less than a second has passed since that time. No landmarks found
             if not("previous_elapsed" in self.etc["timers"]["left_hand"] and self.etc["timers"]["left_hand"]["previous_elapsed"] > self.etc["max_wait_time"]):
                 for index, (key, value) in enumerate(self.landmark_px["left_hand"].items()):
                     for val in value:
-                        cv2.circle(frame, [val[0], val[1]], 2, np.array(self.etc["colormap"]["cmap"](index*self.etc["colormap"]["cmap_spacing"]))*255, 2)
+                        cv2.circle(frame, [val[0], val[1]], 0, np.array(self.etc["colormap"]["cmap"](index*self.etc["colormap"]["cmap_spacing"]))*255, scaled)
         elif left_hand_landmarks is not None: #landmarks found
             image_rows, image_cols, _ = frame.shape
             for index, (key, value) in enumerate(self.gesture_point_dict["left_hand"].items()):
                 value = [self._normalized_to_pixel_coordinates(left_hand_landmarks.landmark[val].x,  left_hand_landmarks.landmark[val].y, image_cols, image_rows) for val in value]
                 self.landmark_px["left_hand"][key] = value
                 for val in value:
-                    cv2.circle(frame, [val[0], val[1]], 2, np.array(self.etc["colormap"]["cmap"](index*self.etc["colormap"]["cmap_spacing"]))*255, 2)
+                    cv2.circle(frame, [val[0], val[1]], 0, np.array(self.etc["colormap"]["cmap"](index*self.etc["colormap"]["cmap_spacing"]))*255, scaled)
             
             lister = np.array(points.flatten(self.landmark_px["left_hand"]))
             mins = np.min(lister, axis = 0)
@@ -246,14 +249,15 @@ class gesture_tracker:
             if not("previous_elapsed" in self.etc["timers"]["right_hand"] and self.etc["timers"]["right_hand"]["previous_elapsed"] > self.etc["max_wait_time"]):
                 for index, (key, value) in enumerate(self.landmark_px["right_hand"].items()):
                     for val in value:
-                        cv2.circle(frame, [val[0], val[1]], 2, np.array(self.etc["colormap"]["cmap"](index*self.etc["colormap"]["cmap_spacing"]))*255, 2)
+                        cv2.circle(frame, [val[0], val[1]], 0, np.array(self.etc["colormap"]["cmap"](index*self.etc["colormap"]["cmap_spacing"]))*255, scaled)
         elif right_hand_landmarks is not None: #landmarks found
             image_rows, image_cols, _ = frame.shape
             for index, (key, value) in enumerate(self.gesture_point_dict["right_hand"].items()):
+                right_hand_scale = np.mean([right_hand_landmarks.landmark[val].z for val in value])
                 value = [self._normalized_to_pixel_coordinates(right_hand_landmarks.landmark[val].x,  right_hand_landmarks.landmark[val].y, image_cols, image_rows) for val in value]
                 self.landmark_px["right_hand"][key] = value
                 for val in value:
-                    cv2.circle(frame, [val[0], val[1]], 2, np.array(self.etc["colormap"]["cmap"](index*self.etc["colormap"]["cmap_spacing"]))*255, 2)
+                    cv2.circle(frame, [val[0], val[1]], 0, np.array(self.etc["colormap"]["cmap"](index*self.etc["colormap"]["cmap_spacing"]))*255, scaled)
             
             lister = np.array(points.flatten(self.landmark_px["right_hand"]))
             mins = np.min(lister, axis = 0)
@@ -284,10 +288,10 @@ class gesture_tracker:
         frame = eye_tracking.draw_eye_calculations(frame,eye_center,angle_diff,king_joshua_ratio, body_center, nose_angle, chest_list, new_point)
         return frame
 
-    def draw_holistic(self, frame, results): #run the drawing algorithms
-        self.draw_face_proprietary(frame, results.face_landmarks, False)
-        self.draw_pose_proprietary(frame, results.pose_landmarks, False)
-        self.draw_hands_proprietary(frame, results.left_hand_landmarks, results.right_hand_landmarks, False)
+    def draw_holistic(self, frame, results, scalar = 1): #run the drawing algorithms
+        self.draw_face_proprietary(frame, results.face_landmarks, False,scalar)
+        self.draw_pose_proprietary(frame, results.pose_landmarks, False,scalar)
+        self.draw_hands_proprietary(frame, results.left_hand_landmarks, results.right_hand_landmarks, False,scalar)
         if results.face_landmarks is not None:
             frame =  self.eyes(frame, results)
         return frame
@@ -335,6 +339,8 @@ class gesture_tracker:
         framergb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         # frame.flags.writeable = True #so you can fix image
         start = time.time() # check time
+        if "points_size" not in self.etc:
+            self.etc["points_size"] = int(np.mean(frame.shape[:2])/250)
         if self.tracking_or_not["hand"] and self.tracking_or_not["pose"] and self.tracking_or_not["face"]: #holistic
             self.processed_frame["holistic"] = self.model_and_solution["holistic_model"].process(framergb) #run holistic model
             track["per frame to process"] = time.time() - track["start"]; track["start"] = time.time()
@@ -354,9 +360,6 @@ class gesture_tracker:
         self.get_timer()
         track["per frame to timer"] = time.time() - track["start"]; track["start"] = time.time()
         self.process_frame = frame #frame post processing(could have drawing points in it as well)
-        _ = self.while_processing(self.process_frame) #filler for any subclasses
-        if _ is not None:
-            frame = _
         track["timer to end of per frame"] = time.time() - track["start"]; track["start"] = time.time()
         return frame
 
@@ -406,13 +409,23 @@ class gesture_tracker:
             _, frame = videoCapture.read()
             
             if frame is None:
+                videoCapture.release()
+                if result_vid:
+                    result.release()
+                    print("result_Release")
+                if starting_vid:
+                    curr.release()
+                    print("curr_Release")
+                cv2.destroyAllWindows()
                 break
             if starting_vid: #write frame to the file
                 curr.write(frame)
             
             if frame_skip != 0 and self.etc["frame_index"] % self.etc["frame_skip"] == 0 : #if you want to skip frames
                 frame = self.per_frame_analysis(frame, True) #run frame analysis
-                
+                _ = self.while_processing(frame,True) #filler for any subclasses
+                if _ is not None:
+                    frame = _
                 if save_pose or standardize_pose:
                     gesture_dic = standardize.convert_holistic_to_dict(self.processed_frame["holistic"])
                 if save_pose and save_frames:
@@ -420,34 +433,48 @@ class gesture_tracker:
                 elif save_pose:
                     self.save_pose = standardize.filter_body_parts(gesture_dic, self.gesture_point_dict)
                 # closer_or_farther = check_distance.closer_or_farther(_)
-                # print(closer_or_farther)
+                # print(closer_or_farther)s
                 if standardize_pose:
-                    stand, distance = standardize.center_and_scale_from_raw(gesture_dic, self.gesture_point_dict,self.moving_average)
-                    #if the array isn't long enough, force add
-                    if len(self.moving_average) < self.etc["moving_average_length"]:
-                        self.moving_average.append(distance)
-                    else:
-                        self.moving_average.append(distance)
-                        del self.moving_average[0]
-                    if save_frames:
-                        self.save_calibrated_pose.append(stand)
-                    else:
-                        self.save_calibrated_pose = stand
+                    try:
+                        stand, self.etc["distance"] = standardize.center_and_scale_from_raw(gesture_dic, self.gesture_point_dict,self.moving_average)
+                        # standardize.display_pose_direct(stand)
+                        #if the array isn't long enough, force add
+                        if len(self.moving_average) < self.etc["moving_average_length"]:
+                            self.moving_average.append(self.etc["distance"])
+                        else:
+                            self.moving_average.append(self.etc["distance"])
+                            del self.moving_average[0]
+                        if save_frames:
+                            self.save_calibrated_pose.append(stand)
+                        else:
+                            self.save_calibrated_pose = stand
+                    except:
+                        pass
+            else:
+                _ = self.while_processing(frame,False) #filler for any subclasses
+                if _ is not None:
+                    frame = _
+
+            if self.tracking_or_not["hand"] and self.tracking_or_not["pose"] and self.tracking_or_not["face"] and self.draw == True:
+                frame = self.draw_holistic(frame, self.processed_frame["holistic"],self.etc["distance"])
             
-            if self.tracking_or_not["hand"] and self.tracking_or_not["pose"] and self.tracking_or_not["face"]:
-                frame = self.draw_holistic(frame, self.processed_frame["holistic"])
-            
-            if "fps" in self.etc:
-                cv2.putText(frame, "FPS: " + str(self.etc["fps"]), (10,15), cv2.FONT_HERSHEY_PLAIN, fontScale = 1, thickness= 2, color = (0,0,0))
+            # if "fps" in self.etc:
+            #     cv2.putText(frame, "FPS: " + str(self.etc["fps"]), (10,15), cv2.FONT_HERSHEY_PLAIN, fontScale = 1, thickness= 2, color = (0,0,0))
             if "gesture" in self.etc:
-                cv2.putText(frame, str(self.etc["gesture"][0]) + ", " + str(self.etc["gesture"][1]), (90,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+                cv2.putText(frame, "gestures", (90,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)            
+            # if "gesture" in self.etc:
+            #     cv2.putText(frame, str(self.etc["gesture"][0]) + ", " + str(self.etc["gesture"][1]), (90,40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
             if result_vid: #write the results
                 result.write(frame)
             
             self.etc["frame_index"] += 1
-            
+            if "width" not in self.etc:
+                abc,self.etc["width"],self.etc["height"] = noduro.scale_image_to_window(frame)
+            else:
+                abc, _, _ =noduro.scale_image_to_window(frame,self.etc["width"],self.etc["height"])
             #Frame displays
-            cv2.imshow("Gesture tracked. Press Q to exit", frame) #show tracking    
+            cv2.imshow("Gesture tracked. Press Q to exit", abc) #show tracking    
+            # cv2.imshow("Gesture tracked. Press Q to exit", cv2.resize(frame,(int(frame.shape[1]/3), int(frame.shape[0]/3)))) #show tracking    
             if cv2.waitKey(1) == ord('q'): #stop everything
                 videoCapture.release()
                 if result_vid:
@@ -465,6 +492,7 @@ class gesture_tracker:
             capture_index = self.camera_selector() #select camera
         track["end of init to capture"] = time.time() - track["start"]; track["start"] = time.time()
         self.capture = cv2.VideoCapture(capture_index, cv2.CAP_DSHOW) #cap_show makes startup alot faster. Starts camera
+        self.capture, _, _ = noduro.get_maximum_resolution(self.capture)
         first_frame = True  
         landmarks = None
         self.looping_analysis(videoCapture = self.capture, video_shape = None, fps = None, result_vid = save_results_vid_file, starting_vid = save_vid_file, frame_skip = frame_skip, save_pose = analyze, standardize_pose = analyze, save_frames = analyze)    
@@ -506,13 +534,15 @@ class gesture_tracker:
     
     def start(self): #filler func for sub classes
         return None
-    def while_processing(self,frame):
-        return None
+    def while_processing(self,frame,process):
+        return frame
     def end(self):
         return None
 
 if __name__ == '__main__':
-    a = gesture_tracker(frameskip = True)
-    a.realtime_analysis(save_vid_file="C:/Users/aadvi/Desktop/Autism/Autism-Adaptive-Video-Prompting/data/raw/gestures/happy/2023-02-21-18-09-10/capture.mp4") #("C:/Users/aadvi/Desktop/Movie on 2-8-23 at 9.43 AM.mov")
-#     a.video_analysis("C:/Users/aadvi/Desktop/Autism/Autism-Adaptive-Video-Prompting/data/raw/gestures/cutting/2023-02-18-10-14-06/test1.mp4")
+    a = gesture_tracker(frameskip = False)
+    # a.video_analysis("C:/Users/aadvi/Desktop/IMG_1004.mp4", result_video = "C:/Users/aadvi/Desktop/vid.mp4")
+    a.realtime_analysis()
+    # a.realtime_analysis(save_vid_file="C:/Users/aadvi/Desktop/Autism/Autism-Adaptive-Video-Prompting/data/raw/gestures/happy/2023-02-21-18-09-10/capture.mp4") #("C:/Users/aadvi/Desktop/Movie on 2-8-23 at 9.43 AM.mov")
+#     a.video_analysis("C:/Users/aadvi/Desktop/Autism/Autism-Adaptive-Video-Pcerompting/data/raw/gestures/cutting/2023-02-18-10-14-06/test1.mp4")
 # print(np.mean(a.timer,axis = 1))

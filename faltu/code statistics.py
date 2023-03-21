@@ -26,7 +26,7 @@ def read_file(file):
     return data_into_list
 def get_all_files(root, write):
     if write:
-        file_types = [".tex", ".readme", ".txt", ".py", ".json"]
+        file_types = [".tex", ".readme", ".py", ".json"]
     else:
         file_types = [".docx", ".tex", ".readme", ".txt", ".ipynb", ".text", ".bib", ".py", ".json", ".csv", ".dat", ".db", ".dbf", ".log", ".sql", ".tar", ".xml", "jar", ".js", ".html" , ".css", ".c", ".class", ".java", ".php", ".sh", ".swift", ".h", ".cpp", ".xlsx", ".xls", ".xlsm", ".dmp", ".wpd",".rtf"]
     result = [os.path.join(dp, f).replace("\\","/") for dp, dn, filenames in os.walk(root) for f in filenames if os.path.splitext(f)[1] in file_types and "pycache" not in dp]
@@ -44,6 +44,6 @@ def get_all_files(root, write):
         counters["word_count"] += _["word_count"]
         print('/'.join(file.split("/")[-3::]), *counters.items(), "\n")
     return counters
-get_all_files("C:/Users/aadvi/Desktop/Autism/Autism-Adaptive-Video-Prompting/",)
+get_all_files("C:/Users/aadvi/Desktop/Autism/Autism-Adaptive-Video-Prompting/", True)
     
 
