@@ -108,6 +108,12 @@ def flatten_gesture_point_dict_to_list(gpdict):
         ret.append(value)
     return ret
 
+
+def flatten_gesture_point_dict_keys_to_list(gpdict):
+    ret = {}
+    for key, value in gpdict.items():
+        ret[key] = [x for v in value.values() for x in v]
+    return ret
 def flatten_3d_to_1d(points : list):
     return np.array([x for v in points for x in v]).flatten()
 # def standardize_pose(points):
@@ -126,6 +132,48 @@ def convert_processed_frame_to_filtered_parts(processed_frame : dict,gpdict) -> 
     filter_body_parts(gesture_dic, gpdict)
 def convert_processed_frame_to_standardized_parts(processed_frame : dict,gpdict, moving_average) -> dict:
     gesture_dic = convert_holistic_to_dict(processed_frame["holistic"])
-    filter_body_parts(gesture_dic, gpdict)
     stand, distance = center_and_scale_from_raw(gesture_dic, gpdict,moving_average)
     return stand, distance
+
+
+
+
+def filter_body_part_faster(landmark, ref_list : list):
+    if landmark is not None:
+        landmark = landmark.landmark
+    else:
+        return [(np.nan,np.nan,np.nan) for v in ref_list]
+    
+    return[(landmark[val].x,landmark[val].y,landmark[val].z) for val in ref_list]
+
+def filter_body_parts_faster(landmarks : dict, ref : dict):
+    ret = []
+    for key, value in ref.items():
+        ret.append(filter_body_part_faster(landmarks[key],value))
+    return ret
+
+def center_and_scale_from_given(points, gpdict_flattened, moving_average = None): #derived point values and the gesture point dictionary
+    if "face" in points.keys() and "pose" in points.keys():
+        irises = ([(points["face"].landmark[l].x,points["face"].landmark[l].y,points["face"].landmark[l].z) for l in DICT["scalar"]["face"]["left_iris"]], [(points["face"].landmark[r].x,points["face"].landmark[r].y,points["face"].landmark[r].z) for r in DICT["scalar"]["face"]["right_iris"]])
+
+        dist = distance(np.mean(irises[0],axis=0),np.mean(irises[1],axis=0))
+
+        center = np.mean([(points["pose"].landmark[c].x,points["pose"].landmark[c].y,points["pose"].landmark[c].z) for c in DICT["center"]["pose"]["chest"]],axis = 0)
+        curr_scale = dist/SCALE
+    else:
+        print("no face and/or pose")
+        return None
+    if moving_average is not None:
+        set_scale = np.mean((curr_scale,np.mean(moving_average)))
+    else:
+        set_scale = curr_scale
+    ret = []
+    s = time.time()
+    for key, value in gpdict_flattened.items():
+        if points[key] == None:
+            a = np.empty((len(value),3)); a.fill(np.nan)
+            ret.append(a)
+        else:
+            a = points[key].landmark
+            ret.append([((a[val].x,a[val].y,a[val].z)-center)/curr_scale for val in value])
+    return ret,curr_scale

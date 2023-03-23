@@ -160,15 +160,20 @@ class gesture_tracker(gesture_base):
                     gesture_dic = standardize.convert_holistic_to_dict(self.processed_frame["holistic"])
                 t_track.append(time.time()) ##2
                 if save_pose and save_frames:
-                    self.save_pose.append(standardize.filter_body_parts(gesture_dic, self.gesture_point_dict))
+                    self.save_pose.append(standardize.filter_body_parts_faster(gesture_dic, self.gpdict_flatten))
                 elif save_pose:
-                    self.save_pose = standardize.filter_body_parts(gesture_dic, self.gesture_point_dict)
+                    self.save_pose = standardize.filter_body_parts_faster(gesture_dic, self.gpdict_flatten)
                 t_track.append(time.time()) ##3
                 # closer_or_farther = check_distance.closer_or_farther(_)
                 # print(closer_or_farther)s
                 if standardize_pose:
                     try:
-                        stand, self.etc["distance"] = standardize.center_and_scale_from_raw(gesture_dic, self.gesture_point_dict,self.moving_average)
+                        if save_pose and save_frames:
+                            self.save_calibrated_pose.append(stand)
+                        elif save_pose:
+                            self.save_calibrated_pose = stand
+
+                        stand, self.etc["distance"] = standardize.center_and_scale_from_given(gesture_dic, self.gpdict_flatten,self.moving_average)
                         # standardize.display_pose_direct(stand)
                         #if the array isn't long enough, force add
                         if len(self.moving_average) < self.etc["moving_average_length"]:
@@ -176,10 +181,7 @@ class gesture_tracker(gesture_base):
                         else:
                             self.moving_average.append(self.etc["distance"])
                             del self.moving_average[0]
-                        if save_frames:
-                            self.save_calibrated_pose.append(stand)
-                        else:
-                            self.save_calibrated_pose = stand
+
                     except:
                         pass
                     t_track.append(time.time()) ##4
@@ -260,7 +262,9 @@ class gesture_tracker(gesture_base):
                     print(feature, "detected; breaking wait time for", feature)
                     del self.etc["timers"][feature]["start"]
                     del self.etc["timers"][feature]["previous_elapsed"]
-
+    def start(self):
+        super.start()
+        self.gpdict_flatten = standardize.flatten_gesture_point_dict_keys_to_list(self.gesture_point_dict)
 if __name__ == '__main__':
     a = gesture_tracker(frameskip = True)
     # a.video_analysis("C:/Users/aadvi/Desktop/IMG_1004.mp4", result_video = "C:/Users/aadvi/Desktop/vid.mp4")
