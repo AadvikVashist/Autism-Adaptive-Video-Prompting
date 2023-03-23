@@ -177,10 +177,18 @@ def scale_image_to_window(image,window_width = None, window_height = None):
     else:
         # scaled_width = window_width
         # scaled_height = int(window_width / image_aspect)
-        new_width = image.shape[1] / 2 * int(window_width/image.shape[1]*2)
+        scalar = window_width/image.shape[1]
+        
+        new_width = window_width
         new_height= new_width/image.shape[1]*image.shape[0]
-        new_image = cv2.resize(image,np.int32([new_width,new_height]))
+        new_image = cv2.resize(image,np.int32([window_width,new_height]))
     return new_image, window_width, window_height
+
+def set_resolution(video_capture : object, width, height):
+
+    video_capture.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    video_capture.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    return video_capture
 
 def get_maximum_resolution(video_capture : object):
     MAX = 100000

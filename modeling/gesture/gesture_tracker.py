@@ -80,19 +80,19 @@ class gesture_tracker(gesture_base):
         return frame
 
     def draw_on_screen(self,frame, texts : list):
-        scalar = int(np.round(frame.shape[0]/1000))
-        _, h = cv2.getTextSize("a", cv2.FONT_HERSHEY_PLAIN, 2*scalar, scalar)[0]
-        h1 = 1.4*h
-        w1 = h/2
+        if "h" not in self.etc:
+            self.etc["scalar"] =  int(np.round(frame.shape[0]/800))
+            _, self.etc["h"] = cv2.getTextSize("a", cv2.FONT_HERSHEY_PLAIN, 2*self.etc["scalar"], self.etc["scalar"])[0]
+        h1 = 1.4*self.etc["h"]
+        w = self.etc["h"]/2
         for text in texts:
-            cv2.putText(frame, text, np.int32([w1,h1]), cv2.FONT_HERSHEY_PLAIN, 2*scalar, (255, 255, 255), scalar, cv2.LINE_AA)
-            h1 += 1.3*h
+            cv2.putText(frame, text, np.int32([self.etc["h"]/2,h1]), cv2.FONT_HERSHEY_PLAIN, 2*self.etc["scalar"], (255, 255, 255), self.etc["scalar"], cv2.LINE_AA)
+            h1 += 1.3*self.etc["h"]
         return frame
     
     def looping_analysis(self, videoCapture : object, video_shape = None, fps = None,  result_vid : str = None, starting_vid: str = None, frame_skip : int = None, save_pose : bool = False, standardize_pose : bool = False, save_frames = False):
         self.processed_frame = {}
         self.visibilty_dict = {}
-        self.t_track = []
         if fps is None:
             fps = 30
         _, frame = videoCapture.read()
@@ -133,7 +133,6 @@ class gesture_tracker(gesture_base):
             _, frame = videoCapture.read()
             self.track["capture_read"] = time.time()-self.track["start"];self.track["start"] = time.time()
 
-
             if frame is None:
                 videoCapture.release()
                 if result_vid:
@@ -150,49 +149,41 @@ class gesture_tracker(gesture_base):
                 self.etc["points_size"] = int(np.mean(frame.shape[:2])/150)
             
             if frame_skip != 0 and self.etc["frame_index"] % self.etc["frame_skip"] == 0 : #if you want to skip frames
-                t_track = [time.time()] ##0
                 frame = self.per_frame_analysis(frame, True) #run frame analysis
                 _ = self.while_processing(frame,True) #filler for any subclasses
-                t_track.append(time.time()) ##1
                 if _ is not None:
                     frame = _
                 if save_pose or standardize_pose:
                     gesture_dic = standardize.convert_holistic_to_dict(self.processed_frame["holistic"])
-                t_track.append(time.time()) ##2
                 if save_pose and save_frames:
                     self.save_pose.append(standardize.filter_body_parts_faster(gesture_dic, self.gpdict_flatten))
                 elif save_pose:
                     self.save_pose = standardize.filter_body_parts_faster(gesture_dic, self.gpdict_flatten)
-                t_track.append(time.time()) ##3
                 # closer_or_farther = check_distance.closer_or_farther(_)
                 # print(closer_or_farther)s
                 if standardize_pose:
                     try:
+                        stand, self.etc["distance"] = standardize.center_and_scale_from_given(gesture_dic, self.gpdict_flatten,self.moving_average)
+                        # standardize.display_pose_direct(stand)
+                        #if the array isn't long enough, force add
                         if save_pose and save_frames:
                             self.save_calibrated_pose.append(stand)
                         elif save_pose:
                             self.save_calibrated_pose = stand
-
-                        stand, self.etc["distance"] = standardize.center_and_scale_from_given(gesture_dic, self.gpdict_flatten,self.moving_average)
-                        # standardize.display_pose_direct(stand)
-                        #if the array isn't long enough, force add
                         if len(self.moving_average) < self.etc["moving_average_length"]:
                             self.moving_average.append(self.etc["distance"])
                         else:
                             self.moving_average.append(self.etc["distance"])
                             del self.moving_average[0]
-
                     except:
                         pass
-                    t_track.append(time.time()) ##4
             else:
                 _ = self.while_processing(frame,False) #filler for any subclasses
                 if _ is not None:
                     frame = _
-
+            start = time.time()
             if self.tracking_or_not["hand"] and self.tracking_or_not["pose"] and self.tracking_or_not["face"] and self.draw == True:
                 frame = self.draw_holistic(frame, self.processed_frame["holistic"],self.etc["distance"])
-            t_track.append(time.time()) ##5
             displays = []
             if "fps" in self.etc:
                 displays.append("FPS: " + str(self.etc["fps"]))
@@ -201,18 +192,15 @@ class gesture_tracker(gesture_base):
             if "screen_elements" in self.etc:
                 displays.extend(self.etc["screen_elements"])
             frame = self.draw_on_screen(frame, displays)
-            t_track.append(time.time()) ##6
             if result_vid: #write the results
                 result.write(frame)
-            
             self.etc["frame_index"] += 1
-            if "width" not in self.etc:
-                abc,self.etc["width"],self.etc["height"] = noduro.scale_image_to_window(frame)
-            else:
-                abc, _, _ =noduro.scale_image_to_window(frame,self.etc["width"],self.etc["height"])
-            t_track.append(time.time()) ##7
+            # if "width" not in self.etc:
+            #     abc,self.etc["width"],self.etc["height"] = noduro.scale_image_to_window(frame)
+            # else:
+            #     abc, _, _ =noduro.scale_image_to_window(frame,self.etc["width"],self.etc["height"])
             #Frame displays
-            cv2.imshow("Gesture tracked. Press Q to exit", abc) #show tracking    
+            cv2.imshow("Gesture tracked. Press Q to exit", frame) #show tracking    
             # cv2.imshow("Gesture tracked. Press Q to exit", cv2.resize(frame,(int(frame.shape[1]/3), int(frame.shape[0]/3)))) #show tracking    
             if cv2.waitKey(1) == ord('q'): #stop everything
                 videoCapture.release()
@@ -224,7 +212,6 @@ class gesture_tracker(gesture_base):
                     print("curr_Release")
                 cv2.destroyAllWindows()
                 break
-            self.t_track.append([t_track[i] - t_track[i-1] for i in range(len(t_track)-1,1,-1)])
         self.end() #ending
 
     def realtime_analysis(self, capture_index : int = 0, save_vid_file  : str = None, save_results_vid_file : str = None, frame_skip = None, analyze = True):
@@ -232,7 +219,7 @@ class gesture_tracker(gesture_base):
             capture_index = self.camera_selector() #select camera
         self.track["end of init to capture"] = time.time() - self.track["start"]; self.track["start"] = time.time()
         self.capture = cv2.VideoCapture(capture_index, cv2.CAP_DSHOW) #cap_show makes startup alot faster. Starts camera
-        self.capture, _, _ = noduro.get_maximum_resolution(self.capture)
+        self.capture = noduro.set_resolution(self.capture, 1920,1080)
         first_frame = True  
         landmarks = None
         self.looping_analysis(videoCapture = self.capture, video_shape = None, fps = None, result_vid = save_results_vid_file, starting_vid = save_vid_file, frame_skip = frame_skip, save_pose = analyze, standardize_pose = analyze, save_frames = analyze)    
@@ -263,7 +250,6 @@ class gesture_tracker(gesture_base):
                     del self.etc["timers"][feature]["start"]
                     del self.etc["timers"][feature]["previous_elapsed"]
     def start(self):
-        super.start()
         self.gpdict_flatten = standardize.flatten_gesture_point_dict_keys_to_list(self.gesture_point_dict)
 if __name__ == '__main__':
     a = gesture_tracker(frameskip = True)
