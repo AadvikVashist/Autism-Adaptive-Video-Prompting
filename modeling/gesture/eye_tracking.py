@@ -75,10 +75,10 @@ def calculate_eye_ratio( left_iris_list, right_iris_list, chest_list, nose_list)
     angle_diff = angle_between_two_lines(-1,nose_line, body_slope[1],body_slope[0])
     return king_joshua_ratio, nose_angle,angle_diff, new_point, body_center, eye_center, left_box, right_box
 
-def draw_eye_calculations(frame,eye_center,angle_diff,king_joshua_ratio, body_center, nose_angle, chest_list, new_point):  
-    cv2.putText(frame, "Orientation: " + str(nose_angle), (10,45), cv2.FONT_HERSHEY_PLAIN, fontScale = 1, thickness= 2, color = (0,0,0))
-    cv2.putText(frame, "Angle Diff: " + str(angle_diff), (10,60), cv2.FONT_HERSHEY_PLAIN, fontScale = 1, thickness= 2, color = (0,0,0))
-    cv2.putText(frame, "Eye Ratio: " + str(king_joshua_ratio), (10,30), cv2.FONT_HERSHEY_PLAIN, fontScale = 1, thickness= 2, color = (0,0,0))
+def draw_eye_calculations(frame,eye_center,angle_diff,king_joshua_ratio, body_center, nose_angle, chest_list, new_point):
+    # cv2.putText(frame, "Orientation: \nd" + str(nose_angle), (10,45), cv2.FONT_HERSHEY_PLAIN, fontScale = 4 * scalar, thickness= 2 * scalar, color = (0,0,0))
+    # cv2.putText(frame, "Angle Diff: " + str(angle_diff), (10,60), cv2.FONT_HERSHEY_PLAIN, fontScale = 4 * scalar, thickness= 2 * scalar, color = (0,0,0))
+    # cv2.putText(frame, "Eye Ratio: " + str(king_joshua_ratio), (10,30), cv2.FONT_HERSHEY_PLAIN, fontScale = 4 * scalar, thickness= 2 * scalar, color = (0,0,0))
     
     cv2.circle(frame, eye_center,radius = 2,color = (255,255,255), thickness = 2) #dot in the center of two eyes
     
@@ -87,4 +87,4 @@ def draw_eye_calculations(frame,eye_center,angle_diff,king_joshua_ratio, body_ce
     cv2.line(frame,body_center,new_point, color = (102,35,0),thickness = 2) # Perpendicular Bisector
     # cv2.line(frame,(int((king_joshua_ratio)*image_cols/2+image_cols/2), 0), (int((king_joshua_ratio)*image_cols/2+image_cols/2), 10000), color = (0,0,255),thickness = 3) # moving line
 
-    return frame
+    return frame, ["Orientation: " + str(nose_angle), "Angle Diff: " + str(angle_diff), "Eye Ratio: " + str(king_joshua_ratio)]
